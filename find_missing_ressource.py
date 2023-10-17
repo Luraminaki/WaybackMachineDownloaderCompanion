@@ -33,7 +33,7 @@ OTHER_EXT = ('css', 'CSS',
              'jpg', 'JPG',
              'jpeg', 'JPEG',
              'png', 'PNG',
-             'ico', 'CO')
+             'ico', 'ICO')
 
 
 class WBMHTMLParser(HTMLParser):
