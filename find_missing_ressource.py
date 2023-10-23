@@ -51,15 +51,20 @@ class WBMHTMLParser(HTMLParser):
         if tag.lower() in ('a', 'img', 'link', 'frame'):
             for name, value in attrs:
                 if name.lower() in ('href', 'src'):
-                    if 'html' in value.lower():
-                        if not value.startswith('http'):
+                    lvalue = value.lower()
+
+                    if any(ext in lvalue for ext in HTML_EXT):
+                        if not lvalue.startswith('http'):
                             value = pathlib.Path(self.current_path + '/' + value).resolve()
                             self.hreflinkshtml.append(str(value).split('#', maxsplit=1)[0])
+
                         else:
                             self.hreflinksunspec.append(value)
-                    elif any(ext in value.lower() for ext in ('.css', '.jpg', '.jpeg', '.png', '.gif', '.ico')):
+
+                    elif any(ext in lvalue for ext in OTHER_EXT):
                         value = pathlib.Path(self.current_path + '/' + value).resolve()
                         self.hreflinksother.append(str(value).split('#', maxsplit=1)[0])
+
                     else:
                         self.hreflinksunspec.append(value)
 
@@ -94,7 +99,6 @@ def get_all_files(files: list[pathlib.Path], exts: list[str]) -> tuple[list[path
         all_files = all_files + [file for file in files if ext in file.suffix.lower()]
 
     print(f"{curr_func} -- Found {len(all_files)} {exts} file(s) in folder {FOLDER_OUTPUT}")
-
     return all_files, {str(file) for file in all_files}
 
 
@@ -189,6 +193,7 @@ def export_missing(file_path: str | pathlib.Path, missing: list[str]) -> None:
             line = line.replace(str(WEB_OUTPUT), str(WEB_FOLDER))
             mf.write(line + '\n')
 
+
 def main() -> int:
     """main
     """
@@ -220,7 +225,6 @@ def main() -> int:
     export_missing('unspecified.txt', unspec)
 
     print(f"{curr_func} -- Done")
-
     return 0
 
 
