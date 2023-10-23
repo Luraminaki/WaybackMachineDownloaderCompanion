@@ -27,13 +27,9 @@ WEB_OUTPUT = WEB_FOLDER + ''
 
 FOLDER_OUTPUT = CWD/WEB_OUTPUT
 
-HTML_EXT = ('html', 'HTML')
-OTHER_EXT = ('css', 'CSS',
-             'gif', 'GIF',
-             'jpg', 'JPG',
-             'jpeg', 'JPEG',
-             'png', 'PNG',
-             'ico', 'ICO')
+HTML_EXT = ['htm']
+OTHER_EXT = ['css', 'gif', 'jpg',
+             'jpeg', 'png', 'ico']
 
 
 class WBMHTMLParser(HTMLParser):
@@ -80,11 +76,11 @@ def flatten(a: list | set) -> list:
     return [c for b in a for c in flatten(b)] if isinstance(a, (list, set)) else [a]
 
 
-def get_all_files(folder_path: pathlib.Path, exts: list[str]) -> tuple[list[pathlib.Path], set[str]]:
+def get_all_files(files: list[pathlib.Path], exts: list[str]) -> tuple[list[pathlib.Path], set[str]]:
     """Given a path, returns a list and set of paths of all the 'ext' files found.
 
     Args:
-        folder_path (pathlib.Path): Path of the folder to search.
+        folder_path (list[pathlib.Path]): All files path of the folder to search.
         ext (list[str]): Files extentions.
 
     Returns:
@@ -92,18 +88,12 @@ def get_all_files(folder_path: pathlib.Path, exts: list[str]) -> tuple[list[path
     """
     curr_func = inspect.currentframe().f_code.co_name
 
-    folder_name = folder_path.stem
     all_files: list[pathlib.Path] = []
 
     for ext in exts:
-        files = list(folder_path.rglob('*.' + ext))
-        if not files:
-            print(f"{curr_func} -- No {ext} found in {folder_name}")
+        all_files = all_files + [file for file in files if ext in file.suffix.lower()]
 
-        files.sort()
-        print(f"{curr_func} -- Found {len(files)} {ext} file(s) in folder {folder_name}")
-
-        all_files = all_files + files.copy()
+    print(f"{curr_func} -- Found {len(all_files)} {exts} file(s) in folder {FOLDER_OUTPUT}")
 
     return all_files, {str(file) for file in all_files}
 
@@ -208,8 +198,14 @@ def main() -> int:
     wbm_parser.hreflinkshtml: list[str] = []
     wbm_parser.hreflinksother: list[str] = []
 
-    html_files_path, html_files_path_str = get_all_files(FOLDER_OUTPUT, HTML_EXT)
-    _, other_files_path_str = get_all_files(FOLDER_OUTPUT, OTHER_EXT)
+    files: list[pathlib.Path] = list(FOLDER_OUTPUT.rglob('*.*'))
+    if not files:
+        print(f"{curr_func} -- Nothing found in {FOLDER_OUTPUT} -- Aborting")
+        return 1
+    files.sort()
+
+    html_files_path, html_files_path_str = get_all_files(files, HTML_EXT)
+    _, other_files_path_str = get_all_files(files, OTHER_EXT)
 
     print("\n")
     html, other, unspec, _ = find_all_links(wbm_parser, html_files_path)
