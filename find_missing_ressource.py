@@ -35,6 +35,9 @@ OTHER_EXT = ['css', 'gif', 'jpg',
 class WBMHTMLParser(HTMLParser):
     """Basic HTML Parser class from html.parser.HTMLParser.
     """
+    seeked_tags = ('a', 'img', 'link', 'frame')
+    seeked_properties = ('href', 'src')
+
     hreflinkshtml: list[str] = []
     hreflinksother: list[str] = []
     hreflinksunspec: list[str] = []
@@ -42,15 +45,15 @@ class WBMHTMLParser(HTMLParser):
     current_path = ''
 
     def handle_starttag(self, tag :str, attrs: list[str, str]):
-        """Find href in <a></a>, <img></img>, <link></link>, <frame></frame> tags.
+        """Find valid link in <a></a>, <img></img>, <link></link>, <frame></frame> tags.
 
         Args:
             tag (str): Parsed tag.
-            attrs (list): Tag's attributes.
+            attrs (list): Tag's attributes (property and value).
         """
-        if tag.lower() in ('a', 'img', 'link', 'frame'):
+        if tag.lower() in self.seeked_tags:
             for name, value in attrs:
-                if name.lower() in ('href', 'src'):
+                if name.lower() in self.seeked_properties:
                     lvalue = value.lower()
 
                     if any(ext in lvalue for ext in HTML_EXT):
