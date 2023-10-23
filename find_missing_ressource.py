@@ -202,10 +202,6 @@ def main() -> int:
     """
     curr_func = inspect.currentframe().f_code.co_name
 
-    wbm_parser = WBMHTMLParser()
-    wbm_parser.hreflinkshtml: list[str] = []
-    wbm_parser.hreflinksother: list[str] = []
-
     files: list[pathlib.Path] = list(FOLDER_OUTPUT.rglob('*.*'))
     if not files:
         print(f"{curr_func} -- Nothing found in {FOLDER_OUTPUT} -- Aborting")
@@ -214,6 +210,8 @@ def main() -> int:
 
     html_files_path, html_files_path_str = get_all_files(files, HTML_EXT)
     _, other_files_path_str = get_all_files(files, OTHER_EXT)
+
+    wbm_parser = WBMHTMLParser()
 
     print("\n")
     html, other, unspec, _ = find_all_links(wbm_parser, html_files_path)
