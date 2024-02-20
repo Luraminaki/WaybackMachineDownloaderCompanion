@@ -7,6 +7,7 @@ Created on Fri Oct 13 18:40:32 2023
 """
 
 #===================================================================================================
+import json
 import inspect
 import pathlib
 from html.parser import HTMLParser
@@ -22,8 +23,13 @@ __version__ = '0.1.0'
 
 CWD = pathlib.Path.cwd()
 
-WEB_FOLDER = 'mn-net.pagesperso-orange.fr'
-WEB_OUTPUT = WEB_FOLDER + ''
+CONFIG_FILE = CWD/'config.json'
+
+with CONFIG_FILE.open('r', encoding='utf-8') as f:
+    CONFIG: dict[str, str] = json.load(f)
+
+WEB_FOLDER = str(CONFIG.get('WEB_FOLDER', ''))
+WEB_OUTPUT = str(CONFIG.get('WEB_OUTPUT', ''))
 
 FOLDER_OUTPUT = CWD/WEB_OUTPUT
 
