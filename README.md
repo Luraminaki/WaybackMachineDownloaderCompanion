@@ -11,6 +11,7 @@ Since [wayback-machine-downloader](https://github.com/hartator/wayback-machine-d
 
 ## VERSIONS
 
+- 0.2.0: Packaging refresh -- installable via `pyproject.toml`, dataclass-based config, a `wmdc` launcher on top of the individual commands, bug fixes, logging, and a small test suite.
 - 0.1.0-alpha: First release
 
 ## TABLE OF CONTENT
@@ -24,23 +25,33 @@ Since [wayback-machine-downloader](https://github.com/hartator/wayback-machine-d
   - [START GUIDE](#start-guide)
     - [CASE 01](#case-01)
     - [CASE 02](#case-02)
+  - [DEVELOPMENT](#development)
   - [WARNINGS](#warnings)
 
 <!-- /TOC -->
 
 ## INSTALL GUIDE
 
-Install the [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) software. You will need [RubyGems](https://www.geeksforgeeks.org/how-to-install-rubygems-on-linux/).
+See [INSTALL.md](INSTALL.md) for platform-specific setup instructions.
 
-For `Python 3` installation, consult the following [link](https://www.python.org/downloads/)
-No other dependencies needed, I wanted to only use the Python 3 standard library for this small project.
+You will also need the [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) Ruby gem installed (via [RubyGems](https://www.geeksforgeeks.org/how-to-install-rubygems-on-linux/)) -- this project only finds and orchestrates missing resources, it doesn't talk to the Wayback Machine itself.
+
+This package has no Python runtime dependencies -- only the standard library.
 
 ## START GUIDE
 
-Don't forget to adjust the variables `WEB_FOLDER` and `WEB_OUTPUT` in the config file `config.json` accordingly to your needs.
+Don't forget to adjust `WEB_FOLDER` and `WEB_OUTPUT` in `config.json` to your needs before running anything.
 
 - Rename the current folder `Wayback-Machine-Downloader-Companion` into `websites`
 - Open a terminal / command prompt, go in the parent's directory of the freshly renamed folder `websites`, and run [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader)
+
+Once resources have been downloaded, the simplest way to run everything is the launcher:
+
+```sh
+wmdc
+```
+
+It shows a menu (merge / find / download / full run) and figures out on its own whether a merge step is needed. For scripting, pass `--mode` instead of using the menu, e.g. `wmdc --mode full`. Every command also accepts `-c path/to/config.json` if your config isn't in the current directory, and `-v`/`-vv` for more verbose logging.
 
 ### CASE 01
 
@@ -50,14 +61,14 @@ Assuming you ran [wayback-machine-downloader](https://github.com/hartator/waybac
 wayback_machine_downloader http://example.com
 ```
 
-- Run the following commands until there is nothing else found to download
+- Run the following commands until there is nothing else found to download (or just run `wmdc --mode full`, which loops this for you)
 
 ```sh
-python3 find_missing_ressource.py
+wmdc-find
 ```
 
 ```sh
-python3 download_missing_ressource.py
+wmdc-download
 ```
 
 ### CASE 02
@@ -71,8 +82,12 @@ wayback_machine_downloader http://example.com -s
 - Run the following command, and then proceed to [CASE 01](#case-01)
 
 ```sh
-python3 merge_snapshots.py
+wmdc-merge
 ```
+
+## DEVELOPMENT
+
+Linting, type checking, and the test suite are covered in [INSTALL.md](INSTALL.md#optional-development-tools).
 
 ## WARNINGS
 
