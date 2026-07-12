@@ -9,17 +9,17 @@ This is a good thing because its content still exists (mostly), but somewhat wor
 With the use of [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader), I was able to download what turned out to be about 7% of the whole website with this software alone.
 Since [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) allows the download of single **URL**, I made the following scripts that helped me with finding all the **URLs** that were 'locally' missing, and fed them to [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) to download said missing files. (I had to repeat this process a couple of times).
 
-## VERSIONS
+## VERSION
 
-- 0.2.0: Packaging refresh -- installable via `pyproject.toml`, dataclass-based config, a `wmdc` launcher on top of the individual commands, bug fixes, logging, and a small test suite.
-- 0.1.0-alpha: First release
+The current version lives in [pyproject.toml](pyproject.toml). See [CHANGELOG.md](CHANGELOG.md)
+for the full version history.
 
 ## TABLE OF CONTENT
 
 <!-- TOC -->
 
 - [WAYBACK-MACHINE-DOWNLOADER-COMPANION](#wayback-machine-downloader-companion)
-  - [VERSIONS](#versions)
+  - [VERSION](#version)
   - [TABLE OF CONTENT](#table-of-content)
   - [INSTALL GUIDE](#install-guide)
   - [START GUIDE](#start-guide)
