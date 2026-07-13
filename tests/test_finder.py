@@ -1,9 +1,9 @@
 """Tests for wayback_machine_downloader_companion.finder."""
 
+import argparse
 import pathlib
 
-from wayback_machine_downloader_companion.finder import export_missing, get_all_files, scan, sort_data
-from wayback_machine_downloader_companion.html_parser import HTML_EXT
+from wayback_machine_downloader_companion.finder import HTML_EXT, export_missing, get_all_files, run, scan, sort_data
 
 
 def test_get_all_files_matches_exact_suffix(tmp_path: pathlib.Path) -> None:
@@ -73,3 +73,18 @@ def test_scan_counts_missing_resources_and_writes_files(make_config) -> None:
     assert result.missing_count == 2
     assert (config.base_dir / 'missing_html.txt').exists()
     assert (config.base_dir / 'missing_other.txt').exists()
+
+
+def test_run_returns_zero_when_scanned(make_config) -> None:
+    config = make_config()
+    config.folder_output.mkdir(parents=True)
+    (config.folder_output / 'index.htm').write_text('<a href="other.htm">x</a>', encoding='utf-8')
+
+    assert run(config, argparse.Namespace()) == 0
+
+
+def test_run_returns_one_when_nothing_to_scan(make_config) -> None:
+    config = make_config()
+    config.folder_output.mkdir(parents=True)
+
+    assert run(config, argparse.Namespace()) == 1

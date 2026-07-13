@@ -6,14 +6,21 @@ import dataclasses
 import logging
 import pathlib
 
-from wayback_machine_downloader_companion.config import AppConfig
-from wayback_machine_downloader_companion.html_parser import HTML_EXT, OTHER_EXT, WBMHTMLParser, find_all_links
+from wayback_machine_downloader_companion.config import (
+    MISSING_HTML_FILE,
+    MISSING_OTHER_FILE,
+    UNSPECIFIED_FILE,
+    AppConfig,
+)
+from wayback_machine_downloader_companion.html_parser import WBMHTMLParser, find_all_links
 
 logger = logging.getLogger(__name__)
 
-MISSING_HTML_FILE = 'missing_html.txt'
-MISSING_OTHER_FILE = 'missing_other.txt'
-UNSPECIFIED_FILE = 'unspecified.txt'
+HTML_EXT = frozenset({'.htm', '.html'})
+OTHER_EXT = frozenset({
+    '.css', '.gif', '.jpg', '.jpeg', '.png', '.ico', '.js', '.mjs', '.svg', '.webp', '.bmp',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf', '.pdf', '.json', '.xml', '.txt', '.mp3', '.mp4', '.webm',
+})
 
 
 def get_all_files(files: list[pathlib.Path], exts: frozenset[str]) -> tuple[list[pathlib.Path], set[str]]:
@@ -124,7 +131,8 @@ def scan(config: AppConfig) -> FinderResult:
     html_files_path, html_files_str = get_all_files(files, HTML_EXT)
     _, other_files_str = get_all_files(files, OTHER_EXT)
 
-    link_report = find_all_links(WBMHTMLParser(), html_files_path)
+    parser = WBMHTMLParser(HTML_EXT, OTHER_EXT, site_root=config.folder_output)
+    link_report = find_all_links(parser, html_files_path)
 
     html_report = sort_data(html_files_str, set(link_report.html_links), 'html')
     other_report = sort_data(other_files_str, set(link_report.other_links), 'other')
