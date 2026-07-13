@@ -4,12 +4,12 @@
 import dataclasses
 import logging
 import pathlib
+import re
 from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
-HTML_EXT = frozenset({'.htm', '.html'})
-OTHER_EXT = frozenset({'.css', '.gif', '.jpg', '.jpeg', '.png', '.ico'})
+_EXTERNAL_SCHEME = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.\-]*:')
 
 
 def _strip_query_and_fragment(value: str) -> str:
@@ -24,16 +24,17 @@ def _strip_query_and_fragment(value: str) -> str:
     return value.split('#', maxsplit=1)[0].split('?', maxsplit=1)[0]
 
 
-def _clean_suffix(value: str) -> str:
-    """Returns the lowercase file extension of a URL or path, ignoring query string and fragment.
+def _is_external(value: str) -> bool:
+    """Returns whether a link points off-site rather than to a local resource.
 
     Args:
         value (str): A raw ``href``/``src`` attribute value.
 
     Returns:
-        str: The lowercase suffix (e.g. ``".htm"``), or an empty string if there is none.
+        bool: ``True`` if ``value`` is protocol-relative (``//host/...``) or has a URI scheme
+            (``http:``, ``https:``, ``mailto:``, ``tel:``, ``javascript:``, ...).
     """
-    return pathlib.Path(_strip_query_and_fragment(value)).suffix.lower()
+    return value.startswith('//') or bool(_EXTERNAL_SCHEME.match(value))
 
 
 class WBMHTMLParser(HTMLParser):
@@ -42,13 +43,46 @@ class WBMHTMLParser(HTMLParser):
     seeked_tags = ('a', 'img', 'link', 'frame')
     seeked_properties = ('href', 'src')
 
-    def __init__(self) -> None:
-        """Initializes a parser with empty, per-instance link buffers."""
+    def __init__(
+        self, html_ext: frozenset[str], other_ext: frozenset[str], site_root: pathlib.Path | None = None,
+    ) -> None:
+        """Initializes a parser with empty, per-instance link buffers.
+
+        Args:
+            html_ext (frozenset[str]): Lowercase extensions (with leading dot) classified as
+                HTML links (e.g. ``".htm"``).
+            other_ext (frozenset[str]): Lowercase extensions (with leading dot) classified as
+                other (non-HTML) resource links (e.g. ``".css"``).
+            site_root (pathlib.Path | None, optional): Root directory root-relative links (e.g.
+                ``"/css/style.css"``) are resolved against. Defaults to None, which resolves
+                them against the current working directory.
+        """
         super().__init__()
+        self.html_ext = html_ext
+        self.other_ext = other_ext
+        self.site_root = site_root if site_root is not None else pathlib.Path()
         self.html_links: list[str] = []
         self.other_links: list[str] = []
         self.unspecified_links: list[str] = []
         self.current_path = '.'
+
+    def _resolve(self, cleaned_value: str) -> str:
+        """Resolves a cleaned local ``href``/``src`` value to an absolute path.
+
+        Args:
+            cleaned_value (str): A ``href``/``src`` value with query string and fragment
+                already removed.
+
+        Returns:
+            str: The resolved absolute path, as a posix-style string.
+        """
+        if cleaned_value.startswith('/'):
+            base = self.site_root
+            cleaned_value = cleaned_value.lstrip('/')
+        else:
+            base = pathlib.Path(self.current_path)
+
+        return (base / cleaned_value).resolve().as_posix()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         """Records any local resource link found in a start tag's ``href``/``src`` attribute.
@@ -65,17 +99,20 @@ class WBMHTMLParser(HTMLParser):
             if value is None or name.lower() not in self.seeked_properties:
                 continue
 
-            if value.lower().startswith('http'):
+            if _is_external(value):
                 self.unspecified_links.append(value)
                 continue
 
-            suffix = _clean_suffix(value)
             cleaned_value = _strip_query_and_fragment(value)
-            resolved = pathlib.Path(f'{self.current_path}/{cleaned_value}').resolve().as_posix()
+            if not cleaned_value:
+                continue  # in-page anchor only (e.g. href="#top"), not a resource reference
 
-            if suffix in HTML_EXT:
+            suffix = pathlib.Path(cleaned_value).suffix.lower()
+            resolved = self._resolve(cleaned_value)
+
+            if suffix in self.html_ext:
                 self.html_links.append(resolved)
-            elif suffix in OTHER_EXT:
+            elif suffix in self.other_ext:
                 self.other_links.append(resolved)
             else:
                 self.unspecified_links.append(resolved)

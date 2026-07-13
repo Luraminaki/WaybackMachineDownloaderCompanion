@@ -20,8 +20,9 @@ def is_snapshot_folder(path: pathlib.Path) -> bool:
 
     This is the single source of truth for what counts as a snapshot folder (as produced by
     ``wayback_machine_downloader -s``, one per 14-digit wayback timestamp), shared by
-    :func:`get_all_files` and :func:`wayback_machine_downloader_companion.cli_launcher.needs_merge`
-    so both always agree on which folders are real snapshots.
+    :func:`build_merge_plan` and
+    :func:`wayback_machine_downloader_companion.cli_launcher.needs_merge` so both always agree
+    on which folders are real snapshots.
 
     Args:
         path (pathlib.Path): Candidate folder.
@@ -44,27 +45,17 @@ def rm_tree(path: pathlib.Path) -> None:
 
 @dataclasses.dataclass(slots=True)
 class MergePlan:
-    """A list of files to copy from versioned snapshot folders into the merged output.
+    """A list of (source, destination) file pairs to copy into the merged output.
 
     Attributes:
-        sources (list[pathlib.Path]): Paths of the most recent version of each file.
-        destinations (list[pathlib.Path]): Corresponding destination paths, one per source.
+        entries (list[tuple[pathlib.Path, pathlib.Path]]): Each pair is the most recent version
+            of a file and where it should land in the merged output folder.
     """
 
-    sources: list[pathlib.Path] = dataclasses.field(default_factory=list)
-    destinations: list[pathlib.Path] = dataclasses.field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Validates that sources and destinations line up.
-
-        Raises:
-            ValueError: ``sources`` and ``destinations`` have different lengths.
-        """
-        if len(self.sources) != len(self.destinations):
-            raise ValueError('sources and destinations must be the same length')
+    entries: list[tuple[pathlib.Path, pathlib.Path]] = dataclasses.field(default_factory=list)
 
 
-def get_all_files(config: AppConfig) -> MergePlan:
+def build_merge_plan(config: AppConfig) -> MergePlan:
     """Resolves the most recent version of every file across versioned snapshot folders.
 
     Args:
@@ -81,8 +72,7 @@ def get_all_files(config: AppConfig) -> MergePlan:
 
     logger.info('Found %d folder(s) to be merged', len(versions))
 
-    sources: list[pathlib.Path] = []
-    destinations: list[pathlib.Path] = []
+    entries: list[tuple[pathlib.Path, pathlib.Path]] = []
     seen: set[pathlib.Path] = set()
 
     for folder in versions:
@@ -99,15 +89,18 @@ def get_all_files(config: AppConfig) -> MergePlan:
                 continue
 
             seen.add(relative)
-            sources.append(file)
-            destinations.append(config.folder_output / relative)
+            entries.append((file, config.folder_output / relative))
 
-    logger.info('Found %d file(s) for %s', len(sources), config.web_folder)
-    return MergePlan(sources=sources, destinations=destinations)
+    logger.info('Found %d file(s) for %s', len(entries), config.web_folder)
+    return MergePlan(entries=entries)
 
 
 def run(config: AppConfig, args: argparse.Namespace) -> int:
     """Rebuilds the merged output folder from the most recent version of every snapshot file.
+
+    The merge plan is computed *before* anything is deleted, so a run with nothing to merge
+    (e.g. no versioned snapshot folders present) leaves any existing merged output untouched
+    instead of wiping it.
 
     Args:
         config (AppConfig): The active configuration.
@@ -117,15 +110,15 @@ def run(config: AppConfig, args: argparse.Namespace) -> int:
     Returns:
         int: ``0`` on success.
     """
-    rm_tree(config.folder_output)
-    config.folder_output.mkdir(parents=True, exist_ok=True)
-
-    plan = get_all_files(config)
-    if not plan.sources:
+    plan = build_merge_plan(config)
+    if not plan.entries:
         logger.info('Done -- nothing to merge')
         return 0
 
-    for source, destination in zip(plan.sources, plan.destinations, strict=True):
+    rm_tree(config.folder_output)
+    config.folder_output.mkdir(parents=True, exist_ok=True)
+
+    for source, destination in plan.entries:
         logger.info('Copying %s -> %s', source, destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(source, destination)

@@ -5,6 +5,10 @@ import dataclasses
 import json
 import pathlib
 
+MISSING_HTML_FILE = 'missing_html.txt'
+MISSING_OTHER_FILE = 'missing_other.txt'
+UNSPECIFIED_FILE = 'unspecified.txt'
+
 
 class ConfigError(Exception):
     """Raised when ``config.json`` is missing required data or malformed."""
@@ -22,12 +26,13 @@ class AppConfig:
             Defaults to ``f"{web_folder}_output"`` when omitted from ``config.json``.
         base_dir (pathlib.Path): Directory ``config.json`` lives in; every relative path is
             resolved against it. Not read from JSON -- injected by :meth:`load` from the config
-            file's parent directory.
+            file's parent directory. Required (no default) so an ``AppConfig`` can never be
+            constructed with an implicit, unvalidated directory by accident.
     """
 
     web_folder: str
     web_output: str
-    base_dir: pathlib.Path = dataclasses.field(default_factory=pathlib.Path.cwd)
+    base_dir: pathlib.Path
 
     @property
     def folder_output(self) -> pathlib.Path:
@@ -68,11 +73,14 @@ class AppConfig:
         web_folder = raw.get('WEB_FOLDER')
         if not isinstance(web_folder, str) or not web_folder.strip():
             raise ConfigError(f'{config_path}: "WEB_FOLDER" must be a non-empty string')
+        web_folder = web_folder.strip()
 
         web_output = raw.get('WEB_OUTPUT')
         if web_output is None:
             web_output = f'{web_folder}_output'
         elif not isinstance(web_output, str) or not web_output.strip():
             raise ConfigError(f'{config_path}: "WEB_OUTPUT" must be a non-empty string when provided')
+        else:
+            web_output = web_output.strip()
 
         return cls(web_folder=web_folder, web_output=web_output, base_dir=config_path.resolve().parent)

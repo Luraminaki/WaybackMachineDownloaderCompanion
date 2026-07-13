@@ -40,10 +40,11 @@ This package has no Python runtime dependencies -- only the standard library.
 
 ## START GUIDE
 
-Don't forget to adjust `WEB_FOLDER` and `WEB_OUTPUT` in `config.json` to your needs before running anything.
+Pick (or create) a working directory to hold the downloaded site, with a `config.json` in it
+(see [config.json](config.json) for the shape) -- `WEB_FOLDER` is the name wayback-machine-downloader
+will create for the site, `WEB_OUTPUT` is where the merged/final content should end up.
 
-- Rename the current folder `Wayback-Machine-Downloader-Companion` into `websites`
-- Open a terminal / command prompt, go in the parent's directory of the freshly renamed folder `websites`, and run [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader)
+- Open a terminal / command prompt in that working directory, and run [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) there.
 
 Once resources have been downloaded, the simplest way to run everything is the launcher:
 
@@ -51,11 +52,11 @@ Once resources have been downloaded, the simplest way to run everything is the l
 wmdc
 ```
 
-It shows a menu (merge / find / download / full run) and figures out on its own whether a merge step is needed. For scripting, pass `--mode` instead of using the menu, e.g. `wmdc --mode full`. Every command also accepts `-c path/to/config.json` if your config isn't in the current directory, and `-v`/`-vv` for more verbose logging.
+It shows a menu (merge / find / download / full run) and figures out on its own whether a merge step is needed. For scripting, pass `--mode` instead of using the menu, e.g. `wmdc --mode full`. Every command also accepts `-c path/to/config.json` if your config isn't in the current directory, and `-v` for more verbose logging.
 
 ### CASE 01
 
-Assuming you ran [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) with the following basic command line in the parent directory:
+Assuming you ran [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) with the following basic command line in your working directory:
 
 ```sh
 wayback_machine_downloader http://example.com
@@ -73,7 +74,7 @@ wmdc-download
 
 ### CASE 02
 
-If you ran [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) with the following command line in the parent directory:
+If you ran [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) with the following command line in your working directory:
 
 ```sh
 wayback_machine_downloader http://example.com -s

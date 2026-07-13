@@ -8,8 +8,7 @@ import shlex
 import subprocess
 import time
 
-from wayback_machine_downloader_companion.config import AppConfig
-from wayback_machine_downloader_companion.finder import MISSING_HTML_FILE, MISSING_OTHER_FILE
+from wayback_machine_downloader_companion.config import MISSING_HTML_FILE, MISSING_OTHER_FILE, AppConfig
 
 logger = logging.getLogger(__name__)
 
