@@ -5,8 +5,13 @@
 - **Python 3.10+**. Get it from [python.org](https://www.python.org/downloads/) (Windows/macOS)
   or your distro's package manager (Linux).
 - **The `wayback-machine-downloader` Ruby gem**, which this project complements rather than
-  replaces. See [its README](https://github.com/hartator/wayback-machine-downloader) and
-  install [RubyGems](https://www.geeksforgeeks.org/how-to-install-rubygems-on-linux/) first.
+  replaces. Install [Ruby](https://www.ruby-lang.org/en/downloads/) and
+  [Bundler](https://bundler.io/) first, then run `gem install wayback_machine_downloader_straw`
+  -- this is the actively maintained [StrawberryMaster fork](https://github.com/StrawberryMaster/wayback-machine-downloader)
+  of the original [hartator/wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader),
+  which looks unmaintained. The executable is still called `wayback_machine_downloader`. If you
+  already have the original gem installed, see the fork's README for a note about a possible
+  conflict between the two.
 
 This project has no Python runtime dependencies -- it only uses the standard library, so there
 are no native libraries to worry about on any platform.

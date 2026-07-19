@@ -1,13 +1,13 @@
 # WAYBACK-MACHINE-DOWNLOADER-COMPANION
 
-Python 3 scripts that complements the [hartator/wayback-machine-downloader]((https://github.com/hartator/wayback-machine-downloader)) software output.
+Python 3 scripts that complements the [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) software output -- a maintained fork of the original [hartator/wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader), which looks unmaintained these days.
 
 I made these following scripts at one of my dearest friend's request.
 For a bit of context, an (arguably) old website has been decommissioned fairly recently (09/2023 ~ 10/2023), and all its content (as it turned out, 'most' is a better word in that case) can now only be found on the famous [Wayback Machine - Internet Archive](https://archive.org/web/).
 This is a good thing because its content still exists (mostly), but somewhat worrying as we don't know for how long, and pretty annoying because browsing through the [Wayback Machine - Internet Archive](https://archive.org/web/) is a slow process (some request give an answer only after 5 seconds or more).
 
-With the use of [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader), I was able to download what turned out to be about 7% of the whole website with this software alone.
-Since [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) allows the download of single **URL**, I made the following scripts that helped me with finding all the **URLs** that were 'locally' missing, and fed them to [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) to download said missing files. (I had to repeat this process a couple of times).
+With the use of [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader), I was able to download what turned out to be about 7% of the whole website with this software alone.
+Since [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) allows the download of single **URL**, I made the following scripts that helped me with finding all the **URLs** that were 'locally' missing, and fed them to [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) to download said missing files. (I had to repeat this process a couple of times).
 
 ## VERSION
 
@@ -34,7 +34,7 @@ for the full version history.
 
 See [INSTALL.md](INSTALL.md) for platform-specific setup instructions.
 
-You will also need the [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) Ruby gem installed (via [RubyGems](https://www.geeksforgeeks.org/how-to-install-rubygems-on-linux/)) -- this project only finds and orchestrates missing resources, it doesn't talk to the Wayback Machine itself.
+You will also need the [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) Ruby gem installed (`gem install wayback_machine_downloader_straw` -- the executable is still called `wayback_machine_downloader`) -- this project only finds and orchestrates missing resources, it doesn't talk to the Wayback Machine itself.
 
 This package has no Python runtime dependencies -- only the standard library.
 
@@ -44,7 +44,7 @@ Pick (or create) a working directory to hold the downloaded site, with a `config
 (see [config.json](config.json) for the shape) -- `WEB_FOLDER` is the name wayback-machine-downloader
 will create for the site, `WEB_OUTPUT` is where the merged/final content should end up.
 
-- Open a terminal / command prompt in that working directory, and run [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) there.
+- Open a terminal / command prompt in that working directory, and run [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) there.
 
 Once resources have been downloaded, the simplest way to run everything is the launcher:
 
@@ -56,7 +56,7 @@ It shows a menu (merge / find / download / full run) and figures out on its own 
 
 ### CASE 01
 
-Assuming you ran [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) with the following basic command line in your working directory:
+Assuming you ran [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) with the following basic command line in your working directory:
 
 ```sh
 wayback_machine_downloader http://example.com
@@ -74,7 +74,7 @@ wmdc-download
 
 ### CASE 02
 
-If you ran [wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader) with the following command line in your working directory:
+If you ran [wayback-machine-downloader](https://github.com/StrawberryMaster/wayback-machine-downloader) with the following command line in your working directory:
 
 ```sh
 wayback_machine_downloader http://example.com -s
@@ -94,5 +94,6 @@ Linting, type checking, and the test suite are covered in [INSTALL.md](INSTALL.m
 
 - Some websites are fairly old, and their 'textual' content may not have been saved with `utf-8` encoding... So you can find some strange characters in your files, or get some errors from my scripts because of that.
 - These scripts 'just worked' for me (albeit with a few tweaks here and there)... So it may not be 100% tailored to your own needs.
+- If you already have hartator's original `wayback_machine_downloader` gem installed, the fork's own docs warn it may conflict with it -- you might need to uninstall the original first.
 
 Best of luck, and I hope this helped.
