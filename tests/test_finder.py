@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 def test_get_all_files_matches_exact_suffix(tmp_path: "pathlib.Path") -> None:
+    """Files are matched on their exact suffix, not a substring."""
     htm_file = tmp_path / "page.htm"
     htm_file.touch()
     xhtml_file = tmp_path / "page.xhtml"
@@ -48,6 +49,7 @@ def test_sort_data_reports_are_mutually_disjoint() -> None:
 def test_export_missing_translates_local_paths_to_urls(
     tmp_path: "pathlib.Path", make_config
 ) -> None:
+    """Missing local paths are exported as the URLs to download."""
     config = make_config(web_folder="example.com", web_output="example.com_output")
     missing_path = (config.folder_output / "sub" / "page.htm").as_posix()
 
@@ -59,6 +61,7 @@ def test_export_missing_translates_local_paths_to_urls(
 
 
 def test_scan_reports_not_scanned_when_output_folder_empty(make_config) -> None:
+    """An empty output folder is reported as not scanned."""
     config = make_config()
     config.folder_output.mkdir(parents=True)
 
@@ -89,6 +92,7 @@ def test_scan_counts_missing_resources_and_writes_files(make_config) -> None:
 
 
 def test_run_returns_zero_when_scanned(make_config) -> None:
+    """A completed scan returns 0."""
     config = make_config()
     config.folder_output.mkdir(parents=True)
     (config.folder_output / "index.htm").write_text('<a href="other.htm">x</a>', encoding="utf-8")
@@ -97,6 +101,7 @@ def test_run_returns_zero_when_scanned(make_config) -> None:
 
 
 def test_run_returns_one_when_nothing_to_scan(make_config) -> None:
+    """Nothing to scan returns 1."""
     config = make_config()
     config.folder_output.mkdir(parents=True)
 

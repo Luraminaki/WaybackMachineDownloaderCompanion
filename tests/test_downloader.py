@@ -39,6 +39,7 @@ def test_repeated_whitespace_does_not_produce_empty_argv_tokens() -> None:
 
 
 def test_start_process_returns_zero_on_completion_marker(tmp_path: "pathlib.Path") -> None:
+    """The downloader succeeds when the tool prints its completion marker."""
     fake_process = _FakeProcess([b"starting\n", b"Download completed\n"])
 
     with mock.patch("subprocess.Popen", return_value=fake_process) as popen:
@@ -55,6 +56,7 @@ def test_start_process_returns_zero_on_completion_marker(tmp_path: "pathlib.Path
 
 
 def test_start_process_returns_one_when_marker_never_seen(tmp_path: "pathlib.Path") -> None:
+    """Without the completion marker, the download counts as failed."""
     fake_process = _FakeProcess([b"starting\n", b"still working\n"])
 
     with mock.patch("subprocess.Popen", return_value=fake_process):

@@ -11,6 +11,7 @@ from wayback_machine_downloader_companion.finder import FinderResult
 
 
 def test_configure_parser_defaults() -> None:
+    """Without arguments, the launcher's parser picks the documented defaults."""
     parser = _cli.build_parser("wmdc", "test", configure_parser=cli_launcher.configure_parser)
     args = parser.parse_args([])
 
@@ -20,11 +21,13 @@ def test_configure_parser_defaults() -> None:
 
 
 def test_needs_merge_false_when_snapshot_folder_missing(make_config) -> None:
+    """No snapshot folder: nothing to merge."""
     config = make_config()
     assert cli_launcher.needs_merge(config) is False
 
 
 def test_needs_merge_true_with_a_versioned_subfolder(make_config) -> None:
+    """A versioned snapshot subfolder means a merge is needed."""
     config = make_config()
     (config.folder_snapshots / "20230601000000").mkdir(parents=True)
 
@@ -32,6 +35,7 @@ def test_needs_merge_true_with_a_versioned_subfolder(make_config) -> None:
 
 
 def test_needs_merge_false_with_only_non_snapshot_subfolders(make_config) -> None:
+    """Subfolders that aren't snapshots don't trigger a merge."""
     config = make_config()
     (config.folder_snapshots / "backup").mkdir(parents=True)
 
@@ -57,6 +61,7 @@ def test_needs_merge_false_when_snapshot_folder_vanishes_during_check(
 def test_run_full_aborts_without_scanning_when_merge_fails(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A failed merge stops the full run before any scan."""
     config = make_config()
     (config.folder_snapshots / "20230601000000").mkdir(parents=True)
 
@@ -74,6 +79,7 @@ def test_run_full_returns_zero_when_nothing_missing_on_first_pass(
     make_config,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Nothing missing on the first pass: success, no download."""
     config = make_config()
     monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=0))
     download_calls: list[object] = []
@@ -86,6 +92,7 @@ def test_run_full_returns_zero_when_nothing_missing_on_first_pass(
 
 
 def test_run_full_loops_until_nothing_missing(make_config, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The full run alternates scan and download until nothing is missing."""
     results = [
         FinderResult(scanned=True, missing_count=2),
         FinderResult(scanned=True, missing_count=0),
@@ -105,6 +112,7 @@ def test_run_full_loops_until_nothing_missing(make_config, monkeypatch: pytest.M
 def test_run_full_returns_one_when_nothing_to_scan(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An empty output folder is an error: there is nothing to scan."""
     monkeypatch.setattr(
         finder, "scan", lambda _config: FinderResult(scanned=False, missing_count=0)
     )
@@ -133,8 +141,9 @@ def test_run_full_returns_one_when_max_iterations_exhausted(
 def test_run_full_returns_one_when_merge_raises(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Regression test: an unexpected error from a step used to surface as a single generic
-    'Unhandled error' with no indication of which step/iteration was in progress.
+    """An unexpected error names the step and iteration it happened in.
+
+    Regression test: it used to surface as a single generic 'Unhandled error'.
     """
     config = make_config()
     (config.folder_snapshots / "20230601000000").mkdir(parents=True)
@@ -152,6 +161,8 @@ def test_run_full_returns_one_when_merge_raises(
 def test_run_full_returns_one_when_finder_scan_raises(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A scan that raises ends the full run with code 1."""
+
     def raise_error(_config: object) -> FinderResult:
         raise RuntimeError("boom")
 
@@ -167,6 +178,7 @@ def test_run_full_returns_one_when_finder_scan_raises(
 def test_run_full_returns_one_when_downloader_raises(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A download that raises ends the full run with code 1."""
     monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=1))
 
     def raise_error(*_a: object, **_k: object) -> int:
@@ -184,6 +196,7 @@ def test_run_full_returns_one_when_downloader_raises(
 def test_run_full_checks_for_unspecified_leftovers_when_done(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A finished full run reports links it couldn't classify."""
     monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=0))
     calls: list[object] = []
     monkeypatch.setattr(
@@ -202,6 +215,7 @@ def test_warn_if_unspecified_remain_logs_when_file_has_entries(
     make_config,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Leftover unspecified links are logged as a warning."""
     config = make_config()
     (config.base_dir / "unspecified.txt").write_text("https://example.com/a.js\n", encoding="utf-8")
 
@@ -215,6 +229,7 @@ def test_warn_if_unspecified_remain_silent_when_file_missing(
     make_config,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """No unspecified-links file: nothing is logged."""
     with caplog.at_level(logging.WARNING):
         cli_launcher._warn_if_unspecified_remain(make_config())
 
@@ -222,6 +237,8 @@ def test_warn_if_unspecified_remain_silent_when_file_missing(
 
 
 def test_run_interactive_returns_one_on_eof(make_config, monkeypatch: pytest.MonkeyPatch) -> None:
+    """End of input in the menu exits with code 1."""
+
     def raise_eof(_prompt: str = "") -> str:
         raise EOFError
 
@@ -235,6 +252,7 @@ def test_run_interactive_returns_one_on_eof(make_config, monkeypatch: pytest.Mon
 def test_run_interactive_dispatches_selected_step(
     make_config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The menu runs the step the user picked."""
     monkeypatch.setattr("builtins.input", lambda _prompt="": "3")
     calls: list[object] = []
     monkeypatch.setattr(finder, "run", lambda *_a, **_k: calls.append(1) or 0)
@@ -250,6 +268,7 @@ def test_run_interactive_quits_on_invalid_choice(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """An invalid menu choice quits without running anything."""
     monkeypatch.setattr("builtins.input", lambda _prompt="": "9")
 
     result = cli_launcher.run_interactive(make_config(), argparse.Namespace())
@@ -264,6 +283,7 @@ def test_run_interactive_quits_on_invalid_choice(
 def test_run_dispatches_by_mode(
     make_config, monkeypatch: pytest.MonkeyPatch, mode: str, module: object
 ) -> None:
+    """Each single-step mode runs its own step."""
     calls: list[object] = []
     monkeypatch.setattr(module, "run", lambda *_a, **_k: calls.append(1) or 0)
 
@@ -274,6 +294,7 @@ def test_run_dispatches_by_mode(
 
 
 def test_run_dispatches_full_mode(make_config, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The `full` mode runs the full loop."""
     calls: list[object] = []
     monkeypatch.setattr(cli_launcher, "run_full", lambda *_a, **_k: calls.append(1) or 0)
 
@@ -287,6 +308,7 @@ def test_run_falls_back_to_interactive_menu_when_mode_is_none(
     make_config,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Without a mode, the interactive menu is shown."""
     calls: list[object] = []
     monkeypatch.setattr(cli_launcher, "run_interactive", lambda *_a, **_k: calls.append(1) or 0)
 

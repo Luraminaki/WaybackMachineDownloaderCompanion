@@ -38,6 +38,7 @@ def test_xhtml_link_is_not_misclassified_as_html() -> None:
 
 
 def test_other_ext_matching_is_exact() -> None:
+    """Non-HTML extensions are matched exactly, not by prefix."""
     parser = make_parser()
     parser.feed('<img src="thumbnails.png">')
 
@@ -45,6 +46,7 @@ def test_other_ext_matching_is_exact() -> None:
 
 
 def test_absolute_links_are_unspecified_regardless_of_extension() -> None:
+    """Absolute links are classed unspecified, whatever their extension."""
     parser = make_parser()
     parser.feed('<img src="http://cdn.example.com/logo.png">')
 
@@ -124,6 +126,7 @@ def test_root_relative_link_resolves_against_site_root(tmp_path: pathlib.Path) -
 
 
 def test_find_all_links_reports_corrupted_files(tmp_path: pathlib.Path) -> None:
+    """Files that can't be parsed are reported, not silently skipped."""
     good_file = tmp_path / "good.htm"
     good_file.write_text('<a href="other.htm">link</a>', encoding="utf-8")
 

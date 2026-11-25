@@ -27,6 +27,7 @@ def test_build_merge_plan_returns_empty_plan_when_no_versions(make_config) -> No
 
 
 def test_build_merge_plan_missing_snapshot_folder_does_not_raise(make_config) -> None:
+    """A missing snapshot folder gives an empty plan, not an error."""
     config = make_config()
 
     plan = build_merge_plan(config)
@@ -35,6 +36,7 @@ def test_build_merge_plan_missing_snapshot_folder_does_not_raise(make_config) ->
 
 
 def test_build_merge_plan_prefers_most_recent_version(make_config) -> None:
+    """When versions overlap, the most recent file wins the merge."""
     config = make_config()
 
     older = config.folder_snapshots / "20230101000000"
@@ -78,6 +80,7 @@ def test_build_merge_plan_ignores_non_snapshot_folders(make_config) -> None:
 
 
 def test_is_snapshot_folder(tmp_path: "pathlib.Path") -> None:
+    """Only timestamp-named folders are snapshot folders."""
     valid = tmp_path / "20230601000000"
     valid.mkdir()
 
@@ -93,6 +96,7 @@ def test_is_snapshot_folder(tmp_path: "pathlib.Path") -> None:
 
 
 def test_rm_tree_removes_folder_and_content(tmp_path: "pathlib.Path") -> None:
+    """The folder and everything in it are removed."""
     target = tmp_path / "to_delete"
     (target / "nested").mkdir(parents=True)
     (target / "file.txt").write_text("x", encoding="utf-8")
@@ -104,10 +108,12 @@ def test_rm_tree_removes_folder_and_content(tmp_path: "pathlib.Path") -> None:
 
 
 def test_rm_tree_missing_folder_does_not_raise(tmp_path: "pathlib.Path") -> None:
+    """Removing a folder that doesn't exist is not an error."""
     rm_tree(tmp_path / "does-not-exist")
 
 
 def test_run_merges_snapshot_into_output(make_config) -> None:
+    """Running the merge copies the snapshot into the output folder."""
     config = make_config()
     snapshot = config.folder_snapshots / "20230601000000"
     snapshot.mkdir(parents=True)
@@ -120,9 +126,10 @@ def test_run_merges_snapshot_into_output(make_config) -> None:
 
 
 def test_run_leaves_existing_output_untouched_when_nothing_to_merge(make_config) -> None:
-    """Regression test: run() used to unconditionally delete folder_output before checking
-    whether there was anything to rebuild it from -- a merge with no snapshot folders present
-    (e.g. running wmdc-merge a second time) silently destroyed already-downloaded content.
+    """With no snapshot to merge, the existing output folder is left untouched.
+
+    Regression test: run() used to delete folder_output before checking whether there was
+    anything to rebuild it from -- a second `wmdc-merge` silently destroyed downloaded content.
     """
     config = make_config()
     config.folder_output.mkdir(parents=True)
