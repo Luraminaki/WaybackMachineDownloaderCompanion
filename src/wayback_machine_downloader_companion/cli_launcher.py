@@ -3,14 +3,15 @@
 
 import logging
 import sys
+from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion import _cli, downloader, finder, merger
 from wayback_machine_downloader_companion.config import UNSPECIFIED_FILE
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from wayback_machine_downloader_companion.config import AppConfig
     import argparse
+
+    from wayback_machine_downloader_companion.config import AppConfig
 
 logger = logging.getLogger(__name__)
 

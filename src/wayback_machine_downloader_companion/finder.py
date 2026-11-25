@@ -3,6 +3,7 @@
 
 import dataclasses
 import logging
+from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion.config import (
     MISSING_HTML_FILE,
@@ -10,14 +11,14 @@ from wayback_machine_downloader_companion.config import (
     UNSPECIFIED_FILE,
 )
 from wayback_machine_downloader_companion.html_parser import WBMHTMLParser, find_all_links
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import argparse
+    import pathlib
+
     from wayback_machine_downloader_companion.config import (
         AppConfig,
     )
-    import pathlib
-    import argparse
 
 logger = logging.getLogger(__name__)
 

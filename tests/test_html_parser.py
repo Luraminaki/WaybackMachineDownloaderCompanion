@@ -1,11 +1,10 @@
 """Tests for wayback_machine_downloader_companion.html_parser."""
 
 import pathlib
-
+from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion.finder import HTML_EXT, OTHER_EXT
 from wayback_machine_downloader_companion.html_parser import WBMHTMLParser, find_all_links
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pytest

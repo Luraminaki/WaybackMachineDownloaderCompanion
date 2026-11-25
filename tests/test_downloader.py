@@ -3,16 +3,16 @@
 import argparse
 import shlex
 import subprocess
+from typing import TYPE_CHECKING
 from unittest import mock
-
 
 from wayback_machine_downloader_companion import downloader
 from wayback_machine_downloader_companion.downloader import run, start_process
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import pytest
     import pathlib
+
+    import pytest
 
 
 class _FakeProcess:

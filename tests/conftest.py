@@ -1,11 +1,11 @@
 """Shared pytest fixtures for the WMDC test suite."""
 
 import json
+from typing import TYPE_CHECKING
 
 import pytest
 
 from wayback_machine_downloader_companion.config import AppConfig
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pathlib

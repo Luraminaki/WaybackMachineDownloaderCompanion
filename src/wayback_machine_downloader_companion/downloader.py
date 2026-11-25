@@ -5,19 +5,20 @@ import logging
 import shlex
 import subprocess
 import time
+from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion.config import (
     MISSING_HTML_FILE,
     MISSING_OTHER_FILE,
 )
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import argparse
+    import pathlib
+
     from wayback_machine_downloader_companion.config import (
         AppConfig,
     )
-    import pathlib
-    import argparse
 
 logger = logging.getLogger(__name__)
 

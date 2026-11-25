@@ -1,9 +1,11 @@
 """Tests for wayback_machine_downloader_companion.config."""
 
+import json
+from typing import TYPE_CHECKING
+
 import pytest
 
 from wayback_machine_downloader_companion.config import AppConfig, ConfigError
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pathlib
@@ -70,3 +72,19 @@ def test_missing_file_raises_file_not_found(tmp_path: "pathlib.Path") -> None:
     """A missing config file raises `FileNotFoundError`."""
     with pytest.raises(FileNotFoundError):
         AppConfig.load(tmp_path / "nope.json")
+
+
+@pytest.mark.parametrize("value", [".", "..", "a/b", "../site", "/abs"])
+def test_folder_settings_must_be_plain_names(tmp_path: "pathlib.Path", value: str) -> None:
+    """A path instead of a folder name is refused: it could aim the merge anywhere."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"WEB_FOLDER": "site", "WEB_OUTPUT": value}), "utf-8")
+
+    with pytest.raises(ConfigError, match="folder name"):
+        AppConfig.load(config_path)
+
+
+def test_unreadable_config_is_a_config_error(tmp_path: "pathlib.Path") -> None:
+    """A folder given as the config file is a readable `ConfigError`, not a traceback."""
+    with pytest.raises(ConfigError, match="Can't read"):
+        AppConfig.load(tmp_path)

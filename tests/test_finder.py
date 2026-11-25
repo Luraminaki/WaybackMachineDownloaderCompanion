@@ -1,6 +1,7 @@
 """Tests for wayback_machine_downloader_companion.finder."""
 
 import argparse
+from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion.finder import (
     HTML_EXT,
@@ -10,7 +11,6 @@ from wayback_machine_downloader_companion.finder import (
     scan,
     sort_data,
 )
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pathlib

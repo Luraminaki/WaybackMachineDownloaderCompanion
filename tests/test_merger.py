@@ -1,15 +1,15 @@
 """Tests for wayback_machine_downloader_companion.merger."""
 
 import argparse
+from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion.merger import (
+    MANIFEST_FILE,
     MergePlan,
     build_merge_plan,
     is_snapshot_folder,
-    rm_tree,
     run,
 )
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pathlib
@@ -51,8 +51,9 @@ def test_build_merge_plan_prefers_most_recent_version(make_config) -> None:
     plan = build_merge_plan(config)
 
     assert len(plan.entries) == 2
-    source, _destination = next(pair for pair in plan.entries if pair[1].name == "page.htm")
-    assert source.read_text(encoding="utf-8") == "new"
+    entry = next(entry for entry in plan.entries if entry.relative == "page.htm")
+    assert entry.source.read_text(encoding="utf-8") == "new"
+    assert entry.snapshot == "20230601000000"
 
 
 def test_build_merge_plan_ignores_non_snapshot_folders(make_config) -> None:
@@ -76,7 +77,7 @@ def test_build_merge_plan_ignores_non_snapshot_folders(make_config) -> None:
     plan = build_merge_plan(config)
 
     assert len(plan.entries) == 1
-    assert plan.entries[0][0].read_text(encoding="utf-8") == "real snapshot content"
+    assert plan.entries[0].source.read_text(encoding="utf-8") == "real snapshot content"
 
 
 def test_is_snapshot_folder(tmp_path: "pathlib.Path") -> None:
@@ -93,23 +94,6 @@ def test_is_snapshot_folder(tmp_path: "pathlib.Path") -> None:
     assert is_snapshot_folder(valid) is True
     assert is_snapshot_folder(not_timestamped) is False
     assert is_snapshot_folder(not_a_dir) is False
-
-
-def test_rm_tree_removes_folder_and_content(tmp_path: "pathlib.Path") -> None:
-    """The folder and everything in it are removed."""
-    target = tmp_path / "to_delete"
-    (target / "nested").mkdir(parents=True)
-    (target / "file.txt").write_text("x", encoding="utf-8")
-    (target / "nested" / "inner.txt").write_text("y", encoding="utf-8")
-
-    rm_tree(target)
-
-    assert not target.exists()
-
-
-def test_rm_tree_missing_folder_does_not_raise(tmp_path: "pathlib.Path") -> None:
-    """Removing a folder that doesn't exist is not an error."""
-    rm_tree(tmp_path / "does-not-exist")
 
 
 def test_run_merges_snapshot_into_output(make_config) -> None:
@@ -139,3 +123,94 @@ def test_run_leaves_existing_output_untouched_when_nothing_to_merge(make_config)
 
     assert result == 0
     assert (config.folder_output / "keep-me.txt").read_text(encoding="utf-8") == "precious"
+
+
+def snapshot(config, timestamp: str, files: dict[str, str]) -> None:
+    """Write a snapshot folder.
+
+    Args:
+        config: The active configuration.
+        timestamp: The snapshot's 14-digit name.
+        files: Relative path -> content.
+    """
+    for relative, content in files.items():
+        path = config.folder_snapshots / timestamp / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+
+def output(config, relative: str) -> str:
+    """Read an output file.
+
+    Args:
+        config: The active configuration.
+        relative: Its path in the output folder.
+
+    Returns:
+        Its content.
+    """
+    return (config.folder_output / relative).read_text(encoding="utf-8")
+
+
+def test_dotted_folders_and_extensionless_files_are_merged(make_config) -> None:
+    """`jquery.ui/` is a folder to walk, `robots` a file to copy (both used to break or vanish)."""
+    config = make_config()
+    snapshot(config, "20230601000000", {"jquery.ui/theme.css": "css", "robots": "txt"})
+
+    assert run(config, argparse.Namespace()) == 0
+
+    assert output(config, "jquery.ui/theme.css") == "css"
+    assert output(config, "robots") == "txt"
+
+
+def test_remerge_keeps_downloaded_and_edited_files(make_config) -> None:
+    """A second merge never overwrites a file it didn't write, nor one edited since."""
+    config = make_config()
+    snapshot(config, "20230601000000", {"page.htm": "archived", "edited.htm": "archived"})
+    assert run(config, argparse.Namespace()) == 0
+    (config.folder_output / "downloaded.htm").write_text("fetched later", encoding="utf-8")
+    (config.folder_output / "edited.htm").write_text("fixed by hand", encoding="utf-8")
+    snapshot(config, "20240101000000", {"edited.htm": "newer", "downloaded.htm": "newer"})
+
+    assert run(config, argparse.Namespace()) == 0
+
+    assert output(config, "downloaded.htm") == "fetched later"
+    assert output(config, "edited.htm") == "fixed by hand"
+    assert output(config, "page.htm") == "archived"
+
+
+def test_newer_snapshot_updates_files_the_merge_wrote(make_config) -> None:
+    """A file still as the last merge left it takes a newer snapshot's version."""
+    config = make_config()
+    snapshot(config, "20230601000000", {"page.htm": "old"})
+    assert run(config, argparse.Namespace()) == 0
+    snapshot(config, "20240101000000", {"page.htm": "new"})
+
+    assert run(config, argparse.Namespace()) == 0
+
+    assert output(config, "page.htm") == "new"
+    assert not list(config.folder_output.glob("*.wmdc-tmp"))
+    assert (config.folder_output / MANIFEST_FILE).is_file()
+
+
+def test_output_inside_the_snapshots_is_refused(make_config) -> None:
+    """WEB_OUTPUT == WEB_FOLDER: the merge refuses instead of destroying the snapshots."""
+    config = make_config(web_output="example.com")
+    snapshot(config, "20230601000000", {"page.htm": "archived"})
+
+    assert run(config, argparse.Namespace()) == 1
+
+    assert (config.folder_snapshots / "20230601000000" / "page.htm").is_file()
+
+
+def test_case_folding_keeps_the_newest_spelling(make_config) -> None:
+    """On a case-insensitive filesystem, `A.html` (newer) and `a.html` (older) are one file."""
+    config = make_config()
+    snapshot(config, "20230101000000", {"a.html": "old"})
+    snapshot(config, "20240101000000", {"A.html": "new"})
+
+    plan = build_merge_plan(config, fold_case=True)
+
+    assert [(entry.relative, entry.snapshot) for entry in plan.entries] == [
+        ("A.html", "20240101000000")
+    ]
