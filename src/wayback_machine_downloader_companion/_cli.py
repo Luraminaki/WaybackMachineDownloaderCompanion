@@ -14,7 +14,9 @@ ConfigureParser = Callable[[argparse.ArgumentParser], None]
 
 
 def build_parser(
-    prog_name: str, description: str, configure_parser: ConfigureParser | None = None,
+    prog_name: str,
+    description: str,
+    configure_parser: ConfigureParser | None = None,
 ) -> argparse.ArgumentParser:
     """Builds an argument parser with the flags shared by every WMDC command.
 
@@ -29,12 +31,18 @@ def build_parser(
     """
     parser = argparse.ArgumentParser(prog=prog_name, description=description)
     parser.add_argument(
-        '-c', '--configuration', type=pathlib.Path, default=pathlib.Path('config.json'),
-        help='Path to config.json (default: ./config.json)',
+        "-c",
+        "--configuration",
+        type=pathlib.Path,
+        default=pathlib.Path("config.json"),
+        help="Path to config.json (default: ./config.json)",
     )
     parser.add_argument(
-        '-v', '--verbose', action='count', default=0,
-        help='Increase log verbosity to debug (default: info)',
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase log verbosity to debug (default: info)",
     )
 
     if configure_parser is not None:
@@ -73,11 +81,11 @@ def main(
     try:
         config = AppConfig.load(args.configuration.resolve())
     except (FileNotFoundError, ConfigError) as error:
-        logger.error('%s', error)
+        logger.error("%s", error)
         return 1
 
     try:
         return run_callable(config, args)
     except Exception:
-        logger.exception('Unhandled error in %s', prog_name)
+        logger.exception("Unhandled error in %s", prog_name)
         return 1

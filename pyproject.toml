@@ -15,6 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
 
@@ -22,7 +23,7 @@ classifiers = [
 Repository = "https://github.com/Luraminaki/WaybackMachineDownloaderCompanion"
 
 [project.optional-dependencies]
-dev = ["ruff>=0.6", "basedpyright>=1.18", "pytest>=8.0"]
+dev = ["ruff>=0.8", "basedpyright>=1.40", "pytest>=8.0", "pylint>=3.3", "radon>=6", "vulture>=2.14"]
 
 [project.scripts]
 wmdc = "wayback_machine_downloader_companion.cli_launcher:cli"
@@ -34,26 +35,56 @@ wmdc-download = "wayback_machine_downloader_companion.cli_download:cli"
 packages = ["src/wayback_machine_downloader_companion"]
 
 [tool.ruff]
+# Lint against the oldest supported Python (see requires-python): newer syntax is flagged.
 target-version = "py310"
-line-length = 120
+line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "PL", "N", "SIM", "RUF", "D"]
-ignore = [
-    "D203", # incompatible with D211 (no-blank-line-before-class)
-    "D213", # incompatible with D212 (multi-line-summary-first-line)
+select = [
+    "E", "F", "W", "I", "UP", "B", "PL", "N", "SIM", "RUF", "D", "PERF",
+    "TC",       # type-only imports under `if TYPE_CHECKING:`
 ]
+
+[tool.ruff.lint.flake8-type-checking]
+quote-annotations = true
+strict = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D", "PLR2004"]
+# Expected values in assertions are literals by nature.
+"tests/*" = ["PLR2004"]
 
 [tool.basedpyright]
 include = ["src", "tests"]
+venvPath = "."
+venv = ".venv"
+# Type-check against the oldest supported Python (see requires-python).
 pythonVersion = "3.10"
-typeCheckingMode = "standard"
+typeCheckingMode = "recommended"
+# Library typing gaps, not project code (same choice as pyBones).
+reportAny = "none"
+reportExplicitAny = "none"
+reportMissingTypeArgument = "none"
+reportUnknownArgumentType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportUnknownVariableType = "none"
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.similarities]
+min-similarity-lines = 8
+
+[tool.pylint."messages control"]
+disable = [
+    # Flags dataclasses and test fakes: data holders by design.
+    "too-few-public-methods",
+    # `assert x == []` makes pytest print the unexpected items; `assert not x` doesn't.
+    "use-implicit-booleaness-not-comparison",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

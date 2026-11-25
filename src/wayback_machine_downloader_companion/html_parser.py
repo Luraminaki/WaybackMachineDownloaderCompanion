@@ -9,7 +9,7 @@ from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
-_EXTERNAL_SCHEME = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.\-]*:')
+_EXTERNAL_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
 
 
 def _strip_query_and_fragment(value: str) -> str:
@@ -21,7 +21,7 @@ def _strip_query_and_fragment(value: str) -> str:
     Returns:
         str: ``value`` with any ``?query`` and ``#fragment`` suffix removed.
     """
-    return value.split('#', maxsplit=1)[0].split('?', maxsplit=1)[0]
+    return value.split("#", maxsplit=1)[0].split("?", maxsplit=1)[0]
 
 
 def _is_external(value: str) -> bool:
@@ -34,17 +34,20 @@ def _is_external(value: str) -> bool:
         bool: ``True`` if ``value`` is protocol-relative (``//host/...``) or has a URI scheme
             (``http:``, ``https:``, ``mailto:``, ``tel:``, ``javascript:``, ...).
     """
-    return value.startswith('//') or bool(_EXTERNAL_SCHEME.match(value))
+    return value.startswith("//") or bool(_EXTERNAL_SCHEME.match(value))
 
 
 class WBMHTMLParser(HTMLParser):
     """HTML parser that collects resource links found in ``<a>``, ``<img>``, ``<link>`` and ``<frame>`` tags."""
 
-    seeked_tags = ('a', 'img', 'link', 'frame')
-    seeked_properties = ('href', 'src')
+    seeked_tags = ("a", "img", "link", "frame")
+    seeked_properties = ("href", "src")
 
     def __init__(
-        self, html_ext: frozenset[str], other_ext: frozenset[str], site_root: pathlib.Path | None = None,
+        self,
+        html_ext: frozenset[str],
+        other_ext: frozenset[str],
+        site_root: pathlib.Path | None = None,
     ) -> None:
         """Initializes a parser with empty, per-instance link buffers.
 
@@ -64,7 +67,7 @@ class WBMHTMLParser(HTMLParser):
         self.html_links: list[str] = []
         self.other_links: list[str] = []
         self.unspecified_links: list[str] = []
-        self.current_path = '.'
+        self.current_path = "."
 
     def _resolve(self, cleaned_value: str) -> str:
         """Resolves a cleaned local ``href``/``src`` value to an absolute path.
@@ -76,9 +79,9 @@ class WBMHTMLParser(HTMLParser):
         Returns:
             str: The resolved absolute path, as a posix-style string.
         """
-        if cleaned_value.startswith('/'):
+        if cleaned_value.startswith("/"):
             base = self.site_root
-            cleaned_value = cleaned_value.lstrip('/')
+            cleaned_value = cleaned_value.lstrip("/")
         else:
             base = pathlib.Path(self.current_path)
 
@@ -143,12 +146,12 @@ def _log_corrupted_lines(file: pathlib.Path) -> None:
     Args:
         file (pathlib.Path): The file to inspect.
     """
-    with file.open('rb') as corrupted_file:
+    with file.open("rb") as corrupted_file:
         for line_number, line in enumerate(corrupted_file, start=1):
             try:
-                line.decode('utf-8')
+                line.decode("utf-8")
             except UnicodeDecodeError:
-                logger.warning('%s -- Non UTF-8 bytes on line %d', file, line_number)
+                logger.warning("%s -- Non UTF-8 bytes on line %d", file, line_number)
 
 
 def find_all_links(parser: WBMHTMLParser, files_path: list[pathlib.Path]) -> LinkReport:
@@ -166,10 +169,10 @@ def find_all_links(parser: WBMHTMLParser, files_path: list[pathlib.Path]) -> Lin
     for file in files_path:
         try:
             parser.current_path = str(file.parent)
-            parser.feed(file.read_text(encoding='utf-8'))
+            parser.feed(file.read_text(encoding="utf-8"))
         except Exception as error:  # one bad/corrupted file must not abort the whole batch
             corrupted_files.append(str(file))
-            logger.warning('Error while reading file %s : %s', file, error)
+            logger.warning("Error while reading file %s : %s", file, error)
             _log_corrupted_lines(file)
 
     report = LinkReport(
@@ -179,9 +182,9 @@ def find_all_links(parser: WBMHTMLParser, files_path: list[pathlib.Path]) -> Lin
         corrupted_files=sorted(corrupted_files),
     )
 
-    logger.info('Found %d possibly corrupted html file(s)', len(report.corrupted_files))
-    logger.info('Found %d html link(s)', len(report.html_links))
-    logger.info('Found %d other link(s)', len(report.other_links))
-    logger.info('Found %d unspecified link(s)', len(report.unspecified_links))
+    logger.info("Found %d possibly corrupted html file(s)", len(report.corrupted_files))
+    logger.info("Found %d html link(s)", len(report.html_links))
+    logger.info("Found %d other link(s)", len(report.other_links))
+    logger.info("Found %d unspecified link(s)", len(report.unspecified_links))
 
     return report

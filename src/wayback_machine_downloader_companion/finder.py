@@ -1,29 +1,59 @@
 #!/usr/bin/env python3
 """Find resources referenced by downloaded HTML pages that are missing locally."""
 
-import argparse
 import dataclasses
 import logging
-import pathlib
 
 from wayback_machine_downloader_companion.config import (
     MISSING_HTML_FILE,
     MISSING_OTHER_FILE,
     UNSPECIFIED_FILE,
-    AppConfig,
 )
 from wayback_machine_downloader_companion.html_parser import WBMHTMLParser, find_all_links
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from wayback_machine_downloader_companion.config import (
+        AppConfig,
+    )
+    import pathlib
+    import argparse
 
 logger = logging.getLogger(__name__)
 
-HTML_EXT = frozenset({'.htm', '.html'})
-OTHER_EXT = frozenset({
-    '.css', '.gif', '.jpg', '.jpeg', '.png', '.ico', '.js', '.mjs', '.svg', '.webp', '.bmp',
-    '.woff', '.woff2', '.ttf', '.eot', '.otf', '.pdf', '.json', '.xml', '.txt', '.mp3', '.mp4', '.webm',
-})
+HTML_EXT = frozenset({".htm", ".html"})
+OTHER_EXT = frozenset(
+    {
+        ".css",
+        ".gif",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".ico",
+        ".js",
+        ".mjs",
+        ".svg",
+        ".webp",
+        ".bmp",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
+        ".pdf",
+        ".json",
+        ".xml",
+        ".txt",
+        ".mp3",
+        ".mp4",
+        ".webm",
+    }
+)
 
 
-def get_all_files(files: list[pathlib.Path], exts: frozenset[str]) -> tuple[list[pathlib.Path], set[str]]:
+def get_all_files(
+    files: list["pathlib.Path"], exts: frozenset[str]
+) -> tuple[list["pathlib.Path"], set[str]]:
     """Filters files down to the ones matching a set of extensions.
 
     Args:
@@ -36,7 +66,7 @@ def get_all_files(files: list[pathlib.Path], exts: frozenset[str]) -> tuple[list
         paths as a set.
     """
     matched = [file for file in files if file.suffix.lower() in exts]
-    logger.info('Found %d file(s) matching %s', len(matched), sorted(exts))
+    logger.info("Found %d file(s) matching %s", len(matched), sorted(exts))
     return matched, {file.as_posix() for file in matched}
 
 
@@ -55,7 +85,9 @@ class SortedResourceReport:
     never_mentioned: list[str]
 
 
-def sort_data(local_files: set[str], found_links: set[str], resource_name: str) -> SortedResourceReport:
+def sort_data(
+    local_files: set[str], found_links: set[str], resource_name: str
+) -> SortedResourceReport:
     """Diffs local files against referenced links.
 
     Args:
@@ -72,14 +104,18 @@ def sort_data(local_files: set[str], found_links: set[str], resource_name: str) 
         never_mentioned=sorted(local_files - found_links),
     )
 
-    logger.info('Found %d existing %s resource(s)', len(report.common), resource_name)
-    logger.info('Found %d missing %s resource(s)', len(report.missing), resource_name)
-    logger.info("Found %d existing but never 'called' %s resource(s)", len(report.never_mentioned), resource_name)
+    logger.info("Found %d existing %s resource(s)", len(report.common), resource_name)
+    logger.info("Found %d missing %s resource(s)", len(report.missing), resource_name)
+    logger.info(
+        "Found %d existing but never 'called' %s resource(s)",
+        len(report.never_mentioned),
+        resource_name,
+    )
 
     return report
 
 
-def export_missing(file_path: pathlib.Path, missing: list[str], config: AppConfig) -> None:
+def export_missing(file_path: "pathlib.Path", missing: list[str], config: "AppConfig") -> None:
     """Exports a list of missing resources into a writable file, as remote wayback URLs.
 
     Args:
@@ -87,12 +123,12 @@ def export_missing(file_path: pathlib.Path, missing: list[str], config: AppConfi
         missing (list[str]): Local-style resource paths to translate back into URLs.
         config (AppConfig): The active configuration, used to translate local paths into URLs.
     """
-    logger.info('Saving %s', file_path)
-    with file_path.open('w', encoding='utf-8') as export_file:
+    logger.info("Saving %s", file_path)
+    with file_path.open("w", encoding="utf-8") as export_file:
         for link in missing:
-            line = link.replace(config.base_dir.as_posix(), 'https:/')
+            line = link.replace(config.base_dir.as_posix(), "https:/")
             line = line.replace(config.web_output, config.web_folder)
-            export_file.write(line + '\n')
+            export_file.write(line + "\n")
 
 
 @dataclasses.dataclass(slots=True)
@@ -109,7 +145,7 @@ class FinderResult:
     missing_count: int
 
 
-def scan(config: AppConfig) -> FinderResult:
+def scan(config: "AppConfig") -> FinderResult:
     """Scans downloaded HTML for missing local resources and exports the results.
 
     This is the core logic behind :func:`run`; callers that need the resulting counts (e.g.
@@ -123,9 +159,9 @@ def scan(config: AppConfig) -> FinderResult:
     Returns:
         FinderResult: Whether a scan happened, and how many resources are missing.
     """
-    files = sorted(config.folder_output.rglob('*.*'))
+    files = sorted(config.folder_output.rglob("*.*"))
     if not files:
-        logger.warning('Nothing found in %s -- Aborting', config.folder_output)
+        logger.warning("Nothing found in %s -- Aborting", config.folder_output)
         return FinderResult(scanned=False, missing_count=0)
 
     html_files_path, html_files_str = get_all_files(files, HTML_EXT)
@@ -134,18 +170,20 @@ def scan(config: AppConfig) -> FinderResult:
     parser = WBMHTMLParser(HTML_EXT, OTHER_EXT, site_root=config.folder_output)
     link_report = find_all_links(parser, html_files_path)
 
-    html_report = sort_data(html_files_str, set(link_report.html_links), 'html')
-    other_report = sort_data(other_files_str, set(link_report.other_links), 'other')
+    html_report = sort_data(html_files_str, set(link_report.html_links), "html")
+    other_report = sort_data(other_files_str, set(link_report.other_links), "other")
 
     export_missing(config.base_dir / MISSING_HTML_FILE, html_report.missing, config)
     export_missing(config.base_dir / MISSING_OTHER_FILE, other_report.missing, config)
     export_missing(config.base_dir / UNSPECIFIED_FILE, link_report.unspecified_links, config)
 
-    logger.info('Done')
-    return FinderResult(scanned=True, missing_count=len(html_report.missing) + len(other_report.missing))
+    logger.info("Done")
+    return FinderResult(
+        scanned=True, missing_count=len(html_report.missing) + len(other_report.missing)
+    )
 
 
-def run(config: AppConfig, args: argparse.Namespace) -> int:
+def run(config: "AppConfig", args: "argparse.Namespace") -> int:
     """Scans downloaded HTML for missing local resources and exports the results.
 
     Args:

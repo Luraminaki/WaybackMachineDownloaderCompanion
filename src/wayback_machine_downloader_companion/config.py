@@ -3,11 +3,14 @@
 
 import dataclasses
 import json
-import pathlib
+from typing import TYPE_CHECKING
 
-MISSING_HTML_FILE = 'missing_html.txt'
-MISSING_OTHER_FILE = 'missing_other.txt'
-UNSPECIFIED_FILE = 'unspecified.txt'
+if TYPE_CHECKING:
+    import pathlib
+
+MISSING_HTML_FILE = "missing_html.txt"
+MISSING_OTHER_FILE = "missing_other.txt"
+UNSPECIFIED_FILE = "unspecified.txt"
 
 
 class ConfigError(Exception):
@@ -32,20 +35,20 @@ class AppConfig:
 
     web_folder: str
     web_output: str
-    base_dir: pathlib.Path
+    base_dir: "pathlib.Path"
 
     @property
-    def folder_output(self) -> pathlib.Path:
+    def folder_output(self) -> "pathlib.Path":
         """pathlib.Path: Absolute path to the folder holding downloaded website content."""
         return self.base_dir / self.web_output
 
     @property
-    def folder_snapshots(self) -> pathlib.Path:
+    def folder_snapshots(self) -> "pathlib.Path":
         """pathlib.Path: Absolute path to the folder holding versioned wayback snapshots."""
         return self.base_dir / self.web_folder
 
     @classmethod
-    def load(cls, config_path: pathlib.Path) -> 'AppConfig':
+    def load(cls, config_path: "pathlib.Path") -> "AppConfig":
         """Loads and validates configuration from a JSON file.
 
         Args:
@@ -60,27 +63,31 @@ class AppConfig:
                 invalid ``WEB_FOLDER``/``WEB_OUTPUT``.
         """
         if not config_path.exists():
-            raise FileNotFoundError(f'Config file not found: {config_path}')
+            raise FileNotFoundError(f"Config file not found: {config_path}")
 
         try:
-            raw = json.loads(config_path.read_text(encoding='utf-8'))
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as error:
-            raise ConfigError(f'Invalid JSON in {config_path}: {error}') from error
+            raise ConfigError(f"Invalid JSON in {config_path}: {error}") from error
 
         if not isinstance(raw, dict):
-            raise ConfigError(f'{config_path} must contain a JSON object')
+            raise ConfigError(f"{config_path} must contain a JSON object")
 
-        web_folder = raw.get('WEB_FOLDER')
+        web_folder = raw.get("WEB_FOLDER")
         if not isinstance(web_folder, str) or not web_folder.strip():
             raise ConfigError(f'{config_path}: "WEB_FOLDER" must be a non-empty string')
         web_folder = web_folder.strip()
 
-        web_output = raw.get('WEB_OUTPUT')
+        web_output = raw.get("WEB_OUTPUT")
         if web_output is None:
-            web_output = f'{web_folder}_output'
+            web_output = f"{web_folder}_output"
         elif not isinstance(web_output, str) or not web_output.strip():
-            raise ConfigError(f'{config_path}: "WEB_OUTPUT" must be a non-empty string when provided')
+            raise ConfigError(
+                f'{config_path}: "WEB_OUTPUT" must be a non-empty string when provided'
+            )
         else:
             web_output = web_output.strip()
 
-        return cls(web_folder=web_folder, web_output=web_output, base_dir=config_path.resolve().parent)
+        return cls(
+            web_folder=web_folder, web_output=web_output, base_dir=config_path.resolve().parent
+        )

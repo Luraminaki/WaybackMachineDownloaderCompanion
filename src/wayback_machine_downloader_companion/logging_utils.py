@@ -39,12 +39,14 @@ def configure_logging(
     logreset.reset_logging()
 
     level = _VERBOSITY_LEVELS[min(verbosity, len(_VERBOSITY_LEVELS) - 1)]
-    log_file = f'{log_file_stem}-{os.getpid()}.log'
+    log_file = f"{log_file_stem}-{os.getpid()}.log"
     logging.basicConfig(
         level=level,
-        format='[%(asctime)s] [%(process)s] [%(name)s] [%(levelname)s]: %(funcName)s -- %(message)s',
+        format="[%(asctime)s] [%(process)s] [%(name)s] [%(levelname)s]: %(funcName)s -- %(message)s",
         handlers=[
-            RotatingFileHandler(log_file, mode='a', maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'),
+            RotatingFileHandler(
+                log_file, mode="a", maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+            ),
             logging.StreamHandler(),
         ],
     )

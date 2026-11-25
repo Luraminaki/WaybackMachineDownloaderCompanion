@@ -3,6 +3,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version('wayback-machine-downloader-companion')
+    __version__ = version("wayback-machine-downloader-companion")
 except PackageNotFoundError:
-    __version__ = 'unknown'
+    __version__ = "unknown"
