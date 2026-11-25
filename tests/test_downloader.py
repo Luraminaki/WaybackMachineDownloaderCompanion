@@ -1,97 +1,122 @@
 """Tests for wayback_machine_downloader_companion.downloader."""
 
 import argparse
-import shlex
 import subprocess
 from typing import TYPE_CHECKING
-from unittest import mock
+
+import pytest
 
 from wayback_machine_downloader_companion import downloader
-from wayback_machine_downloader_companion.downloader import run, start_process
+from wayback_machine_downloader_companion.downloader import (
+    download_command,
+    read_missing_urls,
+    run,
+    start_process,
+)
 
 if TYPE_CHECKING:
     import pathlib
 
-    import pytest
 
+def finished_with(output: str, returncode: int = 0) -> "subprocess.CompletedProcess[bytes]":
+    """Fake a finished wayback_machine_downloader process.
 
-class _FakeProcess:
-    def __init__(self, lines: list[bytes]) -> None:
-        self.stdout = iter(lines)
-        self.terminate = mock.Mock()
+    Args:
+        output: What it printed.
+        returncode: Its exit code.
 
-    def __enter__(self) -> "_FakeProcess":
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        return None
-
-
-def test_repeated_whitespace_does_not_produce_empty_argv_tokens() -> None:
-    """Regression test: ``command.split(' ')`` turned runs of whitespace into empty tokens.
-
-    An empty string in the argv list passed to ``subprocess.Popen`` is treated as a real
-    (blank) argument, silently corrupting the command line.
+    Returns:
+        The completed process.
     """
-    command = "wayback_machine_downloader -e  http://example.com/"  # accidental double space
-
-    assert shlex.split(command) == ["wayback_machine_downloader", "-e", "http://example.com/"]
+    return subprocess.CompletedProcess([], returncode, stdout=output.encode())
 
 
-def test_start_process_returns_zero_on_completion_marker(tmp_path: "pathlib.Path") -> None:
-    """The downloader succeeds when the tool prints its completion marker."""
-    fake_process = _FakeProcess([b"starting\n", b"Download completed\n"])
-
-    with mock.patch("subprocess.Popen", return_value=fake_process) as popen:
-        result = start_process("wayback_machine_downloader -e http://example.com/", cwd=tmp_path)
-
-    assert result == 0
-    fake_process.terminate.assert_called_once()
-    popen.assert_called_once_with(
-        ["wayback_machine_downloader", "-e", "http://example.com/"],
-        cwd=tmp_path,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-
-
-def test_start_process_returns_one_when_marker_never_seen(tmp_path: "pathlib.Path") -> None:
-    """Without the completion marker, the download counts as failed."""
-    fake_process = _FakeProcess([b"starting\n", b"still working\n"])
-
-    with mock.patch("subprocess.Popen", return_value=fake_process):
-        result = start_process("wayback_machine_downloader -e http://example.com/", cwd=tmp_path)
-
-    assert result == 1
-
-
-def test_start_process_survives_non_utf8_output(tmp_path: "pathlib.Path") -> None:
-    """Regression test: a non-UTF-8 byte sequence in subprocess output used to crash the loop.
-
-    strict ``.decode('utf-8')`` raised UnicodeDecodeError on any malformed line, aborting the
-    whole download instead of just that one line.
-    """
-    fake_process = _FakeProcess([b"\xff\xfe garbled\n", b"Download completed\n"])
-
-    with mock.patch("subprocess.Popen", return_value=fake_process):
-        result = start_process("wayback_machine_downloader -e http://example.com/", cwd=tmp_path)
-
-    assert result == 0
-
-
-def test_run_returns_nonzero_when_a_download_fails(
-    make_config, monkeypatch: "pytest.MonkeyPatch"
+@pytest.mark.parametrize(
+    ("output", "returncode", "expected"),
+    [
+        ("Downloading...\nDownload finished in 1.2s.\n", 0, 0),
+        # Regression: the old "Download completed" marker matched only this failure message.
+        ("Download completed with errors.\nDownload finished in 1.2s.\n", 0, 1),
+        ("Download finished in 1.2s.\n", 1, 1),
+        ("Downloading...\n", 0, 1),
+        ("\xff garbled\nDownload finished in 0.1s.\n", 0, 0),
+    ],
+)
+def test_start_process_reads_the_forks_verdict(
+    tmp_path: "pathlib.Path",
+    monkeypatch: pytest.MonkeyPatch,
+    output: str,
+    returncode: int,
+    expected: int,
 ) -> None:
-    """Regression test: run() used to always return 0 regardless of per-URL failures."""
+    """Success needs a clean exit, the fork's "finished" line, and no error summary."""
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: finished_with(output, returncode))
+
+    assert start_process(["wayback_machine_downloader"], cwd=tmp_path) == expected
+
+
+def test_start_process_gives_up_after_the_timeout(
+    tmp_path: "pathlib.Path", monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hung download counts as failed instead of blocking the run forever."""
+
+    def hang(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired("wayback_machine_downloader", 0.1)
+
+    monkeypatch.setattr(subprocess, "run", hang)
+
+    assert start_process(["wayback_machine_downloader", "url"], cwd=tmp_path, timeout=0.1) == 1
+
+
+def test_download_command_saves_into_the_output_folder(tmp_path: "pathlib.Path") -> None:
+    """Each URL is one argument (quotes and spaces are safe) and lands in the scanned folder."""
+    url = "https://example.com/it's a page.html"
+
+    assert download_command(url, tmp_path) == [
+        "wayback_machine_downloader",
+        "-e",
+        "-d",
+        str(tmp_path),
+        url,
+    ]
+
+
+def test_missing_urls_are_read_once_each(make_config) -> None:
+    """Blank lines are skipped and a URL listed twice is downloaded once."""
     config = make_config()
-    (config.base_dir / "missing_html.txt").write_text(
-        "http://example.com/a.htm\n", encoding="utf-8"
-    )
-    (config.base_dir / "missing_other.txt").write_text("", encoding="utf-8")
+    _ = (config.base_dir / "missing_html.txt").write_text("https://a/1\n\nhttps://a/2\n", "utf-8")
+    _ = (config.base_dir / "missing_other.txt").write_text("https://a/1\nhttps://a/3\n", "utf-8")
 
-    monkeypatch.setattr(downloader, "start_process", lambda *_args, **_kwargs: 1)
-    monkeypatch.setattr(downloader.time, "sleep", lambda *_args: None)
+    assert read_missing_urls(config) == ["https://a/1", "https://a/2", "https://a/3"]
 
-    result = run(config, argparse.Namespace())
 
-    assert result == 1
+def test_run_counts_failures_and_pauses_only_between_downloads(
+    make_config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One failed URL fails the run; the pause separates downloads, none after the last."""
+    config = make_config()
+    _ = (config.base_dir / "missing_html.txt").write_text("https://a/1\nhttps://a/2\n", "utf-8")
+    verdicts = [0, 1]
+    pauses: list[float] = []
+    monkeypatch.setattr(downloader.shutil, "which", lambda _name: "/usr/bin/wmd")
+    monkeypatch.setattr(downloader, "start_process", lambda *_a, **_k: verdicts.pop(0))
+    monkeypatch.setattr(downloader.time, "sleep", pauses.append)
+
+    assert run(config, argparse.Namespace()) == 1
+    assert pauses == [downloader.DOWNLOAD_THROTTLE_SECONDS]
+
+
+def test_run_without_the_tool_installed_fails_once(
+    make_config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing wayback_machine_downloader is reported once, not as one error per URL."""
+    config = make_config()
+    _ = (config.base_dir / "missing_html.txt").write_text("https://a/1\n", "utf-8")
+    monkeypatch.setattr(downloader.shutil, "which", lambda _name: None)
+
+    assert run(config, argparse.Namespace()) == 1
+
+
+def test_run_with_nothing_missing_succeeds(make_config) -> None:
+    """No missing-resource file: nothing to download, success."""
+    assert run(make_config(), argparse.Namespace()) == 0

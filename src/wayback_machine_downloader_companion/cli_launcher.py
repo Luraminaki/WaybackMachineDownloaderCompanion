@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Console-script entry point: menu-driven launcher for merge, find, and download."""
 
+import argparse
 import logging
 import sys
 from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion import _cli, downloader, finder, merger
-from wayback_machine_downloader_companion.config import UNSPECIFIED_FILE
+from wayback_machine_downloader_companion.config import (
+    MISSING_HTML_FILE,
+    MISSING_OTHER_FILE,
+    UNSPECIFIED_FILE,
+)
 
 if TYPE_CHECKING:
-    import argparse
-
     from wayback_machine_downloader_companion.config import AppConfig
 
 logger = logging.getLogger(__name__)
@@ -29,26 +32,47 @@ Wayback Machine Downloader Companion
 _MENU_CHOICES = {"1": "full", "2": "merge", "3": "find", "4": "download"}
 
 
+def _positive_int(text: str) -> int:
+    """Parses a command-line count that must be at least 1.
+
+    Args:
+        text (str): The value as typed.
+
+    Returns:
+        int: The count.
+
+    Raises:
+        argparse.ArgumentTypeError: ``text`` isn't an integer >= 1.
+    """
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"expected an integer >= 1, got {text!r}")
+    return value
+
+
 def configure_parser(parser: "argparse.ArgumentParser") -> None:
     """Adds launcher-specific arguments to the shared parser.
 
     Args:
         parser (argparse.ArgumentParser): The parser to extend.
     """
-    parser.add_argument(
+    _ = parser.add_argument(
         "--mode",
         choices=("full", "merge", "find", "download"),
         default=None,
         help="Run non-interactively: perform one step (or the full sequence) and exit.",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--force-merge",
         action="store_true",
         help="Always merge snapshots first, even if none look versioned.",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--max-iterations",
-        type=int,
+        type=_positive_int,
         default=_DEFAULT_MAX_ITERATIONS,
         help=f"Maximum find/download loops in full mode (default: {_DEFAULT_MAX_ITERATIONS}).",
     )
@@ -102,7 +126,7 @@ def _warn_if_unspecified_remain(config: "AppConfig") -> None:
     )
     if count:
         logger.warning(
-            "%d unclassified link(s) in %s were not downloaded automatically -- check them manually",
+            "%d unclassified link(s) in %s were not downloaded automatically -- check them",
             count,
             unspecified_file,
         )
@@ -123,7 +147,7 @@ def _merge_step(config: "AppConfig", args: "argparse.Namespace") -> bool:
 
     try:
         merge_result = merger.run(config, args)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught  # step crash handler, logged
         logger.exception("Merge step raised an unexpected error -- aborting full run")
         return False
 
@@ -131,6 +155,46 @@ def _merge_step(config: "AppConfig", args: "argparse.Namespace") -> bool:
         logger.error("Merge step failed -- aborting full run")
         return False
 
+    return True
+
+
+def _scan_step(config: "AppConfig", iteration: int) -> "finder.FinderResult | None":
+    """Runs one find step of the full loop.
+
+    Args:
+        config (AppConfig): The active configuration.
+        iteration (int): The loop's iteration number, for the logs.
+
+    Returns:
+        FinderResult | None: The scan, or ``None`` if it raised or found nothing to scan.
+    """
+    try:
+        result = finder.scan(config)
+    except Exception:  # pylint: disable=broad-exception-caught  # step crash handler, logged
+        logger.exception("Find step raised an unexpected error during iteration %d", iteration)
+        return None
+    return result if result.scanned else None
+
+
+def _download_step(config: "AppConfig", args: "argparse.Namespace", iteration: int) -> bool:
+    """Runs one download step of the full loop.
+
+    Args:
+        config (AppConfig): The active configuration.
+        args (argparse.Namespace): Parsed command-line arguments.
+        iteration (int): The loop's iteration number, for the logs.
+
+    Returns:
+        bool: ``False`` if the step raised (the loop must stop); failed downloads are only
+        logged, the next scan measures what is still missing.
+    """
+    try:
+        download_result = downloader.run(config, args)
+    except Exception:  # pylint: disable=broad-exception-caught  # step crash handler, logged
+        logger.exception("Download step raised an unexpected error during iteration %d", iteration)
+        return False
+    if download_result != 0:
+        logger.warning("Some downloads failed during iteration %d", iteration)
     return True
 
 
@@ -143,21 +207,17 @@ def run_full(config: "AppConfig", args: "argparse.Namespace") -> int:
             ``max_iterations``).
 
     Returns:
-        int: ``0`` if the run finished with nothing missing, ``1`` if a step raised an
-        unexpected error, the merge step failed, or ``--max-iterations`` was reached without
-        finishing.
+        int: ``0`` if the run finished with nothing missing, ``1`` if nothing was found to
+        scan, a step raised an unexpected error, the merge step failed, an iteration made no
+        progress, or ``--max-iterations`` was reached without finishing.
     """
     if not _merge_step(config, args):
         return 1
 
+    previous_missing: int | None = None
     for iteration in range(1, args.max_iterations + 1):
-        try:
-            result = finder.scan(config)
-        except Exception:
-            logger.exception("Find step raised an unexpected error during iteration %d", iteration)
-            return 1
-
-        if not result.scanned:
+        result = _scan_step(config, iteration)
+        if result is None:
             return 1
 
         if result.missing_count == 0:
@@ -165,21 +225,27 @@ def run_full(config: "AppConfig", args: "argparse.Namespace") -> int:
             _warn_if_unspecified_remain(config)
             return 0
 
-        try:
-            download_result = downloader.run(config, args)
-        except Exception:
-            logger.exception(
-                "Download step raised an unexpected error during iteration %d", iteration
+        # The same URLs failing again would only re-request them from the archive.
+        if previous_missing is not None and result.missing_count >= previous_missing:
+            logger.warning(
+                "No progress in iteration %d (%d still missing) -- stopping; see %s and %s in %s",
+                iteration,
+                result.missing_count,
+                MISSING_HTML_FILE,
+                MISSING_OTHER_FILE,
+                config.base_dir,
             )
             return 1
+        previous_missing = result.missing_count
 
-        if download_result != 0:
-            logger.warning("Some downloads failed during iteration %d", iteration)
+        if not _download_step(config, args, iteration):
+            return 1
 
     logger.warning(
-        "Reached --max-iterations=%d without finishing -- see missing_html.txt/missing_other.txt in %s "
-        "for what still remains",
+        "Reached --max-iterations=%d without finishing -- see %s and %s in %s",
         args.max_iterations,
+        MISSING_HTML_FILE,
+        MISSING_OTHER_FILE,
         config.base_dir,
     )
     return 1

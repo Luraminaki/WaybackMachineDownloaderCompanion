@@ -316,3 +316,32 @@ def test_run_falls_back_to_interactive_menu_when_mode_is_none(
 
     assert result == 0
     assert calls == [1]
+
+
+def test_run_full_stops_when_an_iteration_makes_no_progress(
+    make_config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """URLs the archive doesn't have aren't re-requested until --max-iterations."""
+    counts = [3, 2, 2]
+    monkeypatch.setattr(
+        finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=counts.pop(0))
+    )
+    downloads: list[int] = []
+    monkeypatch.setattr(downloader, "run", lambda *_a, **_k: downloads.append(1) or 1)
+
+    result = cli_launcher.run_full(
+        make_config(), argparse.Namespace(force_merge=False, max_iterations=10)
+    )
+
+    assert result == 1
+    assert len(downloads) == 2
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "two"])
+def test_max_iterations_must_be_positive(value: str) -> None:
+    """`--max-iterations 0` used to skip the loop and then report it reached the limit."""
+    parser = argparse.ArgumentParser()
+    cli_launcher.configure_parser(parser)
+
+    with pytest.raises(SystemExit):
+        _ = parser.parse_args(["--max-iterations", value])
