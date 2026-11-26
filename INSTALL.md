@@ -5,8 +5,8 @@
 - **Python 3.10+**. Get it from [python.org](https://www.python.org/downloads/) (Windows/macOS)
   or your distro's package manager (Linux).
 - **The `wayback-machine-downloader` Ruby gem**, which this project complements rather than
-  replaces. Install [Ruby](https://www.ruby-lang.org/en/downloads/) and
-  [Bundler](https://bundler.io/) first, then run `gem install wayback_machine_downloader_straw`
+  replaces. Install [Ruby](https://www.ruby-lang.org/en/downloads/) first (it comes with the
+  `gem` command), then run `gem install wayback_machine_downloader_straw`
   -- this is the actively maintained [StrawberryMaster fork](https://github.com/StrawberryMaster/wayback-machine-downloader)
   of the original [hartator/wayback-machine-downloader](https://github.com/hartator/wayback-machine-downloader),
   which looks unmaintained. The executable is still called `wayback_machine_downloader`. If you
@@ -47,15 +47,21 @@ pip install .
 
 ## Optional: development tools
 
-Linting (`ruff`), type checking (`basedpyright`), and the test suite (`pytest`) are provided as
-an optional dependency group:
+The development tools are provided as an optional dependency group: `ruff` (lint and format),
+`basedpyright` (type checking, "recommended" mode), `pylint`, `pytest` (the test suite),
+`radon` (complexity) and `vulture` (dead code).
 
 ```sh
 pip install -U -e ".[dev]"
-ruff check src/ tests/
-basedpyright src/
+ruff check . && ruff format --check .
+basedpyright
+pylint src tests
 pytest
 ```
+
+Lines are limited to 100 characters (ruff and pylint), and ruff and basedpyright check the code
+against Python 3.10, the oldest supported version. The 90 tests pass on Python 3.10, 3.12 and
+3.13.
 
 ## Verifying the install
 

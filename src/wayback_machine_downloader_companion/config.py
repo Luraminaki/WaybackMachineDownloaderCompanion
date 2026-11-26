@@ -60,8 +60,9 @@ class AppConfig:
 
         Raises:
             FileNotFoundError: ``config_path`` does not exist.
-            ConfigError: The file is unreadable, not valid JSON, not a JSON object, or has a
-                missing/invalid ``WEB_FOLDER``/``WEB_OUTPUT``.
+            ConfigError: The file is unreadable (e.g. a folder, or not UTF-8), not valid JSON,
+                not a JSON object, or has a missing/invalid ``WEB_FOLDER`` or an invalid
+                ``WEB_OUTPUT``.
         """
         try:
             raw = json.loads(config_path.read_text(encoding="utf-8"))

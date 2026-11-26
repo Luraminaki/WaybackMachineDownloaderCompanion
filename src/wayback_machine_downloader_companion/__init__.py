@@ -1,4 +1,4 @@
-"""Companion CLI tools for hartator/wayback-machine-downloader."""
+"""Companion CLI tools for wayback-machine-downloader (the maintained StrawberryMaster fork)."""
 
 from importlib.metadata import PackageNotFoundError, version
 

@@ -10,3 +10,5 @@ build/
 .ruff_cache/
 *.txt
 *.log
+*.log.[0-9]*
+logs/

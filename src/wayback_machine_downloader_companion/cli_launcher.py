@@ -107,9 +107,9 @@ def needs_merge(config: "AppConfig") -> bool:
 def _warn_if_unspecified_remain(config: "AppConfig") -> None:
     """Warns if ``unspecified.txt`` still has entries that were never auto-downloaded.
 
-    Unclassified links (unrecognized extensions, or links that could not be resolved to a
-    local path) are exported for manual review but are never fed to :mod:`downloader`, since
-    many of them may be genuinely external or otherwise non-fetchable.
+    Unclassified links (external links, and local links with an unrecognized extension) are
+    exported for manual review but are never fed to :mod:`downloader`, since many of them may
+    be genuinely external or otherwise non-fetchable.
 
     Args:
         config (AppConfig): The active configuration.

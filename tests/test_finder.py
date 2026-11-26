@@ -133,3 +133,15 @@ def test_export_builds_urls_from_the_path_inside_the_output(make_config: "MakeCo
         "https://site/my%20page.htm",
         "https://cdn.example.com/x.js",
     ]
+
+
+def test_unspecified_export_keeps_links_leaving_the_site(make_config: "MakeConfig") -> None:
+    """unspecified.txt lists links that escape the site as written; missing lists don't."""
+    config = make_config()
+    kept, dropped = config.base_dir / "unspecified.txt", config.base_dir / "missing.txt"
+
+    export_missing(kept, ["../../x.htm"], config, keep_unresolved=True)
+    export_missing(dropped, ["../../x.htm"], config)
+
+    assert kept.read_text(encoding="utf-8") == "../../x.htm\n"
+    assert dropped.read_text(encoding="utf-8") == ""

@@ -70,7 +70,9 @@ def main(
             parses ``sys.argv[1:]``.
 
     Returns:
-        int: The process exit code: ``0`` on success, ``1`` on a configuration or runtime error.
+        int: The process exit code: the one ``run_callable`` returns, or ``1`` on a
+        configuration error or an unhandled exception. Invalid arguments make ``argparse``
+        exit with code ``2`` instead of returning.
     """
     parser = build_parser(prog_name, description, configure_parser)
     args = parser.parse_args(argv)

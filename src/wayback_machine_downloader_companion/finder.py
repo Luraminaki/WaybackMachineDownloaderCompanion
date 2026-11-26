@@ -142,19 +142,32 @@ def to_wayback_url(link: str, config: "AppConfig") -> str | None:
     return f"https://{config.web_folder}/{urllib.parse.quote(relative)}"
 
 
-def export_missing(file_path: "pathlib.Path", missing: list[str], config: "AppConfig") -> None:
+def export_missing(
+    file_path: "pathlib.Path",
+    missing: list[str],
+    config: "AppConfig",
+    keep_unresolved: bool = False,
+) -> None:
     """Exports resources into a file, one URL per line.
 
     Local paths are turned back into site URLs (see :func:`to_wayback_url`); external links
-    are written as they are; local paths outside the output folder are left out.
+    are written as they are. A link that is neither (one leaving the site folder, kept as
+    written in the page) is written as is with `keep_unresolved`, left out otherwise: the
+    downloader couldn't fetch it.
 
     Args:
         file_path (pathlib.Path): Destination file path.
-        missing (list[str]): Resolved local paths, or external links.
+        missing (list[str]): Resolved local paths, external links, or unresolved links.
         config (AppConfig): The active configuration, used to translate local paths into URLs.
+        keep_unresolved (bool): Write unresolved links as they are, for review by hand.
     """
     logger.info("Saving %s", file_path)
-    lines = [link if is_external(link) else to_wayback_url(link, config) for link in missing]
+    lines = [
+        link
+        if is_external(link)
+        else (to_wayback_url(link, config) or (link if keep_unresolved else None))
+        for link in missing
+    ]
     skipped = lines.count(None)
     if skipped:
         logger.warning(
@@ -169,7 +182,7 @@ class FinderResult:
 
     Attributes:
         scanned (bool): ``False`` if there was nothing to scan (``config.folder_output`` had no
-            files), in which case ``missing_count`` is meaningless.
+            file with an extension), in which case ``missing_count`` is meaningless.
         missing_count (int): Total number of missing resources found (html + other).
     """
 
@@ -207,7 +220,13 @@ def scan(config: "AppConfig") -> FinderResult:
 
     export_missing(config.base_dir / MISSING_HTML_FILE, html_report.missing, config)
     export_missing(config.base_dir / MISSING_OTHER_FILE, other_report.missing, config)
-    export_missing(config.base_dir / UNSPECIFIED_FILE, link_report.unspecified_links, config)
+    # Kept as written in the page: unspecified.txt is reviewed by hand, never downloaded.
+    export_missing(
+        config.base_dir / UNSPECIFIED_FILE,
+        link_report.unspecified_links,
+        config,
+        keep_unresolved=True,
+    )
 
     logger.info("Done")
     return FinderResult(
