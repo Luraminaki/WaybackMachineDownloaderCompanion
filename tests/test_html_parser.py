@@ -114,7 +114,7 @@ def test_root_relative_link_resolves_against_site_root(tmp_path: pathlib.Path) -
     current_file_dir = site_root / "sub" / "dir"
 
     parser = WBMHTMLParser(HTML_EXT, OTHER_EXT, site_root=site_root)
-    parser.current_path = str(current_file_dir)
+    parser.current_path = current_file_dir
     parser.feed('<link href="/css/style.css">')
 
     assert parser.other_links == {(site_root / "css" / "style.css").resolve().as_posix()}

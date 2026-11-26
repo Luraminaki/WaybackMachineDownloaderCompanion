@@ -16,7 +16,7 @@ are never overwritten.
 import dataclasses
 import json
 import logging
-import os
+import pathlib
 import re
 import shutil
 import tempfile
@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import argparse
-    import pathlib
 
     from wayback_machine_downloader_companion.config import AppConfig
 
@@ -88,8 +87,8 @@ def is_case_insensitive(folder: "pathlib.Path") -> bool:
         bool: ``True`` if ``A.html`` and ``a.html`` would be the same file there.
     """
     with tempfile.NamedTemporaryFile(prefix="wmdc-Case-", dir=folder) as probe:
-        twin = os.path.join(os.path.dirname(probe.name), os.path.basename(probe.name).lower())
-        return os.path.exists(twin)
+        probe_path = pathlib.Path(probe.name)
+        return probe_path.with_name(probe_path.name.lower()).exists()
 
 
 def build_merge_plan(config: "AppConfig", fold_case: bool = False) -> MergePlan:

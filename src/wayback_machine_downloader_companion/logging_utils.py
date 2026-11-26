@@ -22,7 +22,9 @@ def _prune_old_logs(log_dir: pathlib.Path, log_file_stem: str, keep: int) -> Non
         log_file_stem (str): The program's log file stem.
         keep (int): How many of its log files (rotated ones included) to keep.
     """
-    files = sorted(log_dir.glob(f"{log_file_stem}-*.log*"), key=os.path.getmtime, reverse=True)
+    files = sorted(
+        log_dir.glob(f"{log_file_stem}-*.log*"), key=lambda file: file.stat().st_mtime, reverse=True
+    )
     for old in files[keep:]:
         _delete_if_possible(old)
 

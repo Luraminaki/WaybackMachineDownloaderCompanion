@@ -386,7 +386,7 @@ def test_logs_go_to_a_folder_and_old_ones_are_pruned(
     for index in range(logging_utils.KEPT_LOG_FILES + 5):
         old = logs / f"wmdc-{index}.log"
         _ = old.write_text("x", encoding="utf-8")
-        os.utime(old, (index, index))
+        os.utime(old, (index, index))  # pathlib has no API to set a file's times
 
     logging_utils.configure_logging("wmdc")
 

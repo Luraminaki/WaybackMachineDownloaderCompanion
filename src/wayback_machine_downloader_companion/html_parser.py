@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """HTML parsing: extract local resource links referenced by downloaded pages.
 
-Links are resolved as strings (``os.path.normpath``), never through the filesystem: it costs
+Links are resolved lexically (:func:`normalize`), never through the filesystem: it costs
 no system call per link, doesn't follow symlinks, and gives the same form as the local file
 paths they are compared with. A link that resolves outside the site folder can't be a local
 resource of the site: it is reported as unspecified.
@@ -9,7 +9,6 @@ resource of the site: it is reported as unspecified.
 
 import dataclasses
 import logging
-import os
 import pathlib
 import re
 import urllib.parse
@@ -64,6 +63,30 @@ def is_external(value: str) -> bool:
     return value.startswith("//") or bool(_EXTERNAL_SCHEME.match(value))
 
 
+def normalize(path: pathlib.PurePath) -> pathlib.PurePath:
+    """Collapses ``..`` segments lexically, without touching the filesystem.
+
+    ``Path.resolve`` would read the disk (and follow symlinks) for every link; pathlib already
+    drops ``.`` and repeated separators, so only ``..`` remains to fold. Like a shell, ``..``
+    never climbs above the root.
+
+    Args:
+        path (pathlib.PurePath): An absolute path.
+
+    Returns:
+        pathlib.PurePath: The same path without ``..`` segments.
+    """
+    if ".." not in path.parts:
+        return path
+    parts: list[str] = []
+    for part in path.parts:
+        if part != "..":
+            parts.append(part)
+        elif len(parts) > 1:  # parts[0] is the root
+            _ = parts.pop()
+    return type(path)(*parts)
+
+
 def decode_page(data: bytes) -> str:
     """Decodes a downloaded page whatever its encoding.
 
@@ -110,11 +133,15 @@ class WBMHTMLParser(HTMLParser):
         super().__init__()
         self.html_ext: frozenset[str] = html_ext
         self.other_ext: frozenset[str] = other_ext
-        self.site_root: str = os.path.normpath(os.path.abspath(site_root or pathlib.Path()))
+        self.site_root: pathlib.PurePath = normalize((site_root or pathlib.Path()).absolute())
         self.html_links: set[str] = set()
         self.other_links: set[str] = set()
         self.unspecified_links: set[str] = set()
-        self.current_path: str = self.site_root  # until a page sets its own folder
+        self.current_path: pathlib.PurePath = self.site_root  # until a page sets its own
+        # Resolved links of the current folder: pages of one folder repeat the same links
+        # (menus, images), and pages are visited folder by folder. Cleared when the folder
+        # changes, so it holds at most one folder's distinct links.
+        self._resolved: dict[str, str | None] = {}
 
     def _resolve(self, cleaned_value: str) -> str | None:
         """Resolves a cleaned local link to an absolute path inside the site folder.
@@ -125,12 +152,16 @@ class WBMHTMLParser(HTMLParser):
         Returns:
             str | None: The resolved path, posix style; ``None`` if it leaves the site folder.
         """
+        if cleaned_value in self._resolved:  # `None` is a cached "outside the site"
+            return self._resolved[cleaned_value]
         relative = urllib.parse.unquote(cleaned_value)
         base = self.site_root if relative.startswith("/") else self.current_path
-        resolved = os.path.normpath(os.path.join(base, relative.lstrip("/")))
-        if resolved != self.site_root and not resolved.startswith(self.site_root + os.sep):
-            return None
-        return pathlib.Path(resolved).as_posix()
+        resolved = normalize(base / relative.lstrip("/"))
+        root_parts = self.site_root.parts
+        inside = resolved.parts[: len(root_parts)] == root_parts
+        result = resolved.as_posix() if inside else None
+        self._resolved[cleaned_value] = result
+        return result
 
     def _record(self, value: str) -> None:
         """Classifies one link value and stores it.
@@ -182,7 +213,10 @@ class WBMHTMLParser(HTMLParser):
             text (str): The page's HTML.
             folder (pathlib.Path): The folder the page is in.
         """
-        self.current_path = os.path.normpath(os.path.abspath(folder))
+        folder_path = normalize(folder.absolute())
+        if folder_path != self.current_path:
+            self.current_path = folder_path
+            self._resolved.clear()
         try:
             self.feed(text)
             self.close()  # process what the page left buffered
