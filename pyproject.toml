@@ -71,6 +71,11 @@ reportUnknownArgumentType = "none"
 reportUnknownMemberType = "none"
 reportUnknownParameterType = "none"
 reportUnknownVariableType = "none"
+# Same family, from test lambdas given to `monkeypatch.setattr` (typed `Any`).
+reportUnknownLambdaType = "none"
+# `typing.override` only exists from Python 3.12, and the package supports 3.10 with no
+# dependencies (typing_extensions would be one).
+reportImplicitOverride = "none"
 
 [tool.pylint.format]
 max-line-length = 100

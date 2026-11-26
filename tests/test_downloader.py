@@ -1,7 +1,9 @@
 """Tests for wayback_machine_downloader_companion.downloader."""
 
 import argparse
+import shutil
 import subprocess
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,6 +18,8 @@ from wayback_machine_downloader_companion.downloader import (
 
 if TYPE_CHECKING:
     import pathlib
+
+    from tests.conftest import MakeConfig
 
 
 def finished_with(output: str, returncode: int = 0) -> "subprocess.CompletedProcess[bytes]":
@@ -81,7 +85,7 @@ def test_download_command_saves_into_the_output_folder(tmp_path: "pathlib.Path")
     ]
 
 
-def test_missing_urls_are_read_once_each(make_config) -> None:
+def test_missing_urls_are_read_once_each(make_config: "MakeConfig") -> None:
     """Blank lines are skipped and a URL listed twice is downloaded once."""
     config = make_config()
     _ = (config.base_dir / "missing_html.txt").write_text("https://a/1\n\nhttps://a/2\n", "utf-8")
@@ -91,32 +95,32 @@ def test_missing_urls_are_read_once_each(make_config) -> None:
 
 
 def test_run_counts_failures_and_pauses_only_between_downloads(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One failed URL fails the run; the pause separates downloads, none after the last."""
     config = make_config()
     _ = (config.base_dir / "missing_html.txt").write_text("https://a/1\nhttps://a/2\n", "utf-8")
     verdicts = [0, 1]
     pauses: list[float] = []
-    monkeypatch.setattr(downloader.shutil, "which", lambda _name: "/usr/bin/wmd")
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/wmd")
     monkeypatch.setattr(downloader, "start_process", lambda *_a, **_k: verdicts.pop(0))
-    monkeypatch.setattr(downloader.time, "sleep", pauses.append)
+    monkeypatch.setattr(time, "sleep", pauses.append)
 
     assert run(config, argparse.Namespace()) == 1
     assert pauses == [downloader.DOWNLOAD_THROTTLE_SECONDS]
 
 
 def test_run_without_the_tool_installed_fails_once(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A missing wayback_machine_downloader is reported once, not as one error per URL."""
     config = make_config()
     _ = (config.base_dir / "missing_html.txt").write_text("https://a/1\n", "utf-8")
-    monkeypatch.setattr(downloader.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
 
     assert run(config, argparse.Namespace()) == 1
 
 
-def test_run_with_nothing_missing_succeeds(make_config) -> None:
+def test_run_with_nothing_missing_succeeds(make_config: "MakeConfig") -> None:
     """No missing-resource file: nothing to download, success."""
     assert run(make_config(), argparse.Namespace()) == 0

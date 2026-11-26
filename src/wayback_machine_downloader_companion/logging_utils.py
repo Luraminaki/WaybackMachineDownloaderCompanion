@@ -3,13 +3,40 @@
 
 import logging
 import os
+import pathlib
 from logging.handlers import RotatingFileHandler
-
-from wayback_machine_downloader_companion import logreset
 
 _DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 _DEFAULT_BACKUP_COUNT = 5
 _VERBOSITY_LEVELS = (logging.INFO, logging.DEBUG)
+_FORMAT = "[%(asctime)s] [%(process)s] [%(name)s] [%(levelname)s]: %(funcName)s -- %(message)s"
+LOG_DIR = pathlib.Path("logs")
+KEPT_LOG_FILES = 20
+
+
+def _prune_old_logs(log_dir: pathlib.Path, log_file_stem: str, keep: int) -> None:
+    """Deletes the oldest log files of a program, keeping the most recent ones.
+
+    Args:
+        log_dir (pathlib.Path): The log folder.
+        log_file_stem (str): The program's log file stem.
+        keep (int): How many of its log files (rotated ones included) to keep.
+    """
+    files = sorted(log_dir.glob(f"{log_file_stem}-*.log*"), key=os.path.getmtime, reverse=True)
+    for old in files[keep:]:
+        _delete_if_possible(old)
+
+
+def _delete_if_possible(path: pathlib.Path) -> None:
+    """Deletes a file, leaving it for a later run if the OS refuses.
+
+    Args:
+        path (pathlib.Path): The file.
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as error:  # still open by another process (Windows)
+        logging.getLogger(__name__).debug("Keeping %s for a later run -- %s", path, error)
 
 
 def configure_logging(
@@ -20,33 +47,35 @@ def configure_logging(
 ) -> None:
     """Initializes logging consistently across the CLI entry points.
 
-    The log file is named ``<log_file_stem>-<pid>.log``, one per OS process, rather than one
-    shared file: ``RotatingFileHandler``'s rotation (renaming the file once it grows past
-    `max_bytes`) is not safe across multiple processes -- if two processes hold the same file
-    open, one process rotating it can orphan the other's file handle, silently dropping its log
-    lines from then on. Each file still rotates on its own, keeping up to `backup_count` older
-    files (`<log_file_stem>-<pid>.log.1`, `.2`, ...) before the oldest is discarded.
+    The log file is ``logs/<log_file_stem>-<pid>.log`` (relative to the working directory),
+    one per OS process, rather than one shared file: ``RotatingFileHandler``'s rotation
+    (renaming the file once it grows past `max_bytes`) is not safe across multiple processes
+    -- if two processes hold the same file open, one process rotating it can orphan the
+    other's file handle, silently dropping its log lines from then on. Each file still rotates
+    on its own (`backup_count` older files), and only the :data:`KEPT_LOG_FILES` most recent
+    files of a program are kept, so runs don't pile files up.
 
     Args:
         log_file_stem (str): The stem for the log file name (typically the program name).
         verbosity (int, optional): Number of times ``-v`` was passed on the command line. ``0``
-            (default) logs info and above, matching the previous scripts' always-on progress
-            output. ``1+`` logs debug and above. Defaults to 0.
+            (default) logs info and above; ``1+`` logs debug and above. Defaults to 0.
         max_bytes (int, optional): Size in bytes a log file may reach before it rolls over.
             Defaults to 5 MiB.
         backup_count (int, optional): Number of rotated log files to keep. Defaults to 5.
     """
-    logreset.reset_logging()
+    LOG_DIR.mkdir(exist_ok=True)
+    _prune_old_logs(LOG_DIR, log_file_stem, KEPT_LOG_FILES - 1)  # room for this run's file
 
     level = _VERBOSITY_LEVELS[min(verbosity, len(_VERBOSITY_LEVELS) - 1)]
-    log_file = f"{log_file_stem}-{os.getpid()}.log"
+    log_file = LOG_DIR / f"{log_file_stem}-{os.getpid()}.log"
     logging.basicConfig(
         level=level,
-        format="[%(asctime)s] [%(process)s] [%(name)s] [%(levelname)s]: %(funcName)s -- %(message)s",
+        format=_FORMAT,
         handlers=[
             RotatingFileHandler(
                 log_file, mode="a", maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
             ),
             logging.StreamHandler(),
         ],
+        force=True,  # replaces any previous configuration (e.g. a second run in one process)
     )

@@ -30,6 +30,7 @@ Wayback Machine Downloader Companion
 """
 
 _MENU_CHOICES = {"1": "full", "2": "merge", "3": "find", "4": "download"}
+_QUIT_CHOICE = "5"
 
 
 def _positive_int(text: str) -> int:
@@ -255,7 +256,8 @@ def run_interactive(config: "AppConfig", args: "argparse.Namespace") -> int:
         args (argparse.Namespace): Parsed command-line arguments.
 
     Returns:
-        int: The exit code of the dispatched step, or ``0`` on quit/invalid/no input.
+        int: The exit code of the dispatched step, ``0`` on quit, ``1`` on an invalid choice
+        or when no input is available.
     """
     print(_MENU)
 
@@ -265,10 +267,13 @@ def run_interactive(config: "AppConfig", args: "argparse.Namespace") -> int:
         print("No input available -- exiting.")
         return 1
 
-    mode = _MENU_CHOICES.get(choice)
-    if mode is None:
+    if choice == _QUIT_CHOICE:
         print("Goodbye.")
         return 0
+    mode = _MENU_CHOICES.get(choice)
+    if mode is None:
+        print(f"Invalid choice {choice!r} -- exiting.")
+        return 1
 
     return _dispatch_table()[mode](config, args)
 

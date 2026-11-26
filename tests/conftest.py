@@ -1,7 +1,7 @@
 """Shared pytest fixtures for the WMDC test suite."""
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 
@@ -11,8 +11,24 @@ if TYPE_CHECKING:
     import pathlib
 
 
+class MakeConfig(Protocol):
+    """Signature of the `make_config` fixture."""
+
+    def __call__(self, web_folder: str = ..., web_output: str | None = None) -> AppConfig:
+        """Write a config.json and load it.
+
+        Args:
+            web_folder: The WEB_FOLDER setting.
+            web_output: The WEB_OUTPUT setting, omitted if `None`.
+
+        Returns:
+            The loaded configuration.
+        """
+        ...
+
+
 @pytest.fixture
-def make_config(tmp_path: "pathlib.Path"):
+def make_config(tmp_path: "pathlib.Path") -> MakeConfig:
     """Return a factory that writes a ``config.json`` under ``tmp_path`` and loads it.
 
     Args:
@@ -28,7 +44,7 @@ def make_config(tmp_path: "pathlib.Path"):
             payload["WEB_OUTPUT"] = web_output
 
         config_path = tmp_path / "config.json"
-        config_path.write_text(json.dumps(payload), encoding="utf-8")
+        _ = config_path.write_text(json.dumps(payload), encoding="utf-8")
         return AppConfig.load(config_path)
 
     return _make

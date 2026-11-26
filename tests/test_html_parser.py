@@ -123,7 +123,7 @@ def test_root_relative_link_resolves_against_site_root(tmp_path: pathlib.Path) -
 def test_find_all_links_reports_corrupted_files(tmp_path: pathlib.Path) -> None:
     """Files that can't be read are reported, not silently skipped."""
     good_file = tmp_path / "good.htm"
-    good_file.write_text('<a href="other.htm">link</a>', encoding="utf-8")
+    _ = good_file.write_text('<a href="other.htm">link</a>', encoding="utf-8")
 
     bad_file = tmp_path / "vanished.htm"  # listed, but gone before it could be read
 
@@ -190,7 +190,7 @@ def test_script_iframe_and_background_links_are_collected(tmp_path: pathlib.Path
     parser = make_parser(tmp_path)
     parser.parse_page(
         '<script src="app.js"></script><iframe src="frame.htm"></iframe>'
-        '<body background="bg.gif"><object data="movie.swf"></object>',
+        + '<body background="bg.gif"><object data="movie.swf"></object>',
         tmp_path,
     )
 

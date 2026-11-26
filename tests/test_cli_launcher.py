@@ -2,12 +2,24 @@
 
 import argparse
 import logging
+import os
 import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
-from wayback_machine_downloader_companion import _cli, cli_launcher, downloader, finder, merger
+from wayback_machine_downloader_companion import (
+    _cli,
+    cli_launcher,
+    downloader,
+    finder,
+    logging_utils,
+    merger,
+)
 from wayback_machine_downloader_companion.finder import FinderResult
+
+if TYPE_CHECKING:
+    from tests.conftest import MakeConfig
 
 
 def test_configure_parser_defaults() -> None:
@@ -17,16 +29,16 @@ def test_configure_parser_defaults() -> None:
 
     assert args.mode is None
     assert args.force_merge is False
-    assert args.max_iterations == cli_launcher._DEFAULT_MAX_ITERATIONS
+    assert args.max_iterations == cli_launcher._DEFAULT_MAX_ITERATIONS  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
 
 
-def test_needs_merge_false_when_snapshot_folder_missing(make_config) -> None:
+def test_needs_merge_false_when_snapshot_folder_missing(make_config: "MakeConfig") -> None:
     """No snapshot folder: nothing to merge."""
     config = make_config()
     assert cli_launcher.needs_merge(config) is False
 
 
-def test_needs_merge_true_with_a_versioned_subfolder(make_config) -> None:
+def test_needs_merge_true_with_a_versioned_subfolder(make_config: "MakeConfig") -> None:
     """A versioned snapshot subfolder means a merge is needed."""
     config = make_config()
     (config.folder_snapshots / "20230601000000").mkdir(parents=True)
@@ -34,7 +46,7 @@ def test_needs_merge_true_with_a_versioned_subfolder(make_config) -> None:
     assert cli_launcher.needs_merge(config) is True
 
 
-def test_needs_merge_false_with_only_non_snapshot_subfolders(make_config) -> None:
+def test_needs_merge_false_with_only_non_snapshot_subfolders(make_config: "MakeConfig") -> None:
     """Subfolders that aren't snapshots don't trigger a merge."""
     config = make_config()
     (config.folder_snapshots / "backup").mkdir(parents=True)
@@ -43,7 +55,7 @@ def test_needs_merge_false_with_only_non_snapshot_subfolders(make_config) -> Non
 
 
 def test_needs_merge_false_when_snapshot_folder_vanishes_during_check(
-    make_config,
+    make_config: "MakeConfig",
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Regression test: needs_merge() used to let a TOCTOU iterdir() failure propagate."""
@@ -59,7 +71,7 @@ def test_needs_merge_false_when_snapshot_folder_vanishes_during_check(
 
 
 def test_run_full_aborts_without_scanning_when_merge_fails(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed merge stops the full run before any scan."""
     config = make_config()
@@ -76,7 +88,7 @@ def test_run_full_aborts_without_scanning_when_merge_fails(
 
 
 def test_run_full_returns_zero_when_nothing_missing_on_first_pass(
-    make_config,
+    make_config: "MakeConfig",
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Nothing missing on the first pass: success, no download."""
@@ -91,7 +103,9 @@ def test_run_full_returns_zero_when_nothing_missing_on_first_pass(
     assert download_calls == []
 
 
-def test_run_full_loops_until_nothing_missing(make_config, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_full_loops_until_nothing_missing(
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The full run alternates scan and download until nothing is missing."""
     results = [
         FinderResult(scanned=True, missing_count=2),
@@ -110,7 +124,7 @@ def test_run_full_loops_until_nothing_missing(make_config, monkeypatch: pytest.M
 
 
 def test_run_full_returns_one_when_nothing_to_scan(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An empty output folder is an error: there is nothing to scan."""
     monkeypatch.setattr(
@@ -125,7 +139,7 @@ def test_run_full_returns_one_when_nothing_to_scan(
 
 
 def test_run_full_returns_one_when_max_iterations_exhausted(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Regression test: run_full used to always return 0, even when it never converged."""
     monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=1))
@@ -139,7 +153,7 @@ def test_run_full_returns_one_when_max_iterations_exhausted(
 
 
 def test_run_full_returns_one_when_merge_raises(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unexpected error names the step and iteration it happened in.
 
@@ -159,7 +173,7 @@ def test_run_full_returns_one_when_merge_raises(
 
 
 def test_run_full_returns_one_when_finder_scan_raises(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A scan that raises ends the full run with code 1."""
 
@@ -176,7 +190,7 @@ def test_run_full_returns_one_when_finder_scan_raises(
 
 
 def test_run_full_returns_one_when_downloader_raises(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A download that raises ends the full run with code 1."""
     monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=1))
@@ -194,7 +208,7 @@ def test_run_full_returns_one_when_downloader_raises(
 
 
 def test_run_full_checks_for_unspecified_leftovers_when_done(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A finished full run reports links it couldn't classify."""
     monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=0))
@@ -212,31 +226,35 @@ def test_run_full_checks_for_unspecified_leftovers_when_done(
 
 
 def test_warn_if_unspecified_remain_logs_when_file_has_entries(
-    make_config,
+    make_config: "MakeConfig",
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Leftover unspecified links are logged as a warning."""
     config = make_config()
-    (config.base_dir / "unspecified.txt").write_text("https://example.com/a.js\n", encoding="utf-8")
+    _ = (config.base_dir / "unspecified.txt").write_text(
+        "https://example.com/a.js\n", encoding="utf-8"
+    )
 
     with caplog.at_level(logging.WARNING):
-        cli_launcher._warn_if_unspecified_remain(config)
+        cli_launcher._warn_if_unspecified_remain(config)  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
 
     assert "unclassified link" in caplog.text
 
 
 def test_warn_if_unspecified_remain_silent_when_file_missing(
-    make_config,
+    make_config: "MakeConfig",
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """No unspecified-links file: nothing is logged."""
     with caplog.at_level(logging.WARNING):
-        cli_launcher._warn_if_unspecified_remain(make_config())
+        cli_launcher._warn_if_unspecified_remain(make_config())  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
 
     assert caplog.text == ""
 
 
-def test_run_interactive_returns_one_on_eof(make_config, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_interactive_returns_one_on_eof(
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
+) -> None:
     """End of input in the menu exits with code 1."""
 
     def raise_eof(_prompt: str = "") -> str:
@@ -250,7 +268,7 @@ def test_run_interactive_returns_one_on_eof(make_config, monkeypatch: pytest.Mon
 
 
 def test_run_interactive_dispatches_selected_step(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The menu runs the step the user picked."""
     monkeypatch.setattr("builtins.input", lambda _prompt="": "3")
@@ -264,24 +282,33 @@ def test_run_interactive_dispatches_selected_step(
 
 
 def test_run_interactive_quits_on_invalid_choice(
-    make_config,
+    make_config: "MakeConfig",
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An invalid menu choice quits without running anything."""
+    """An invalid menu choice exits with an error, running nothing (a typo isn't a success)."""
     monkeypatch.setattr("builtins.input", lambda _prompt="": "9")
 
     result = cli_launcher.run_interactive(make_config(), argparse.Namespace())
 
-    assert result == 0
-    assert "Goodbye" in capsys.readouterr().out
+    assert result == 1
+    assert "Invalid choice '9'" in capsys.readouterr().out
+
+
+def test_run_interactive_quit_choice_exits_cleanly(
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Choosing "Quit" ends with code 0."""
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "5")
+
+    assert cli_launcher.run_interactive(make_config(), argparse.Namespace()) == 0
 
 
 @pytest.mark.parametrize(
     ("mode", "module"), [("merge", merger), ("find", finder), ("download", downloader)]
 )
 def test_run_dispatches_by_mode(
-    make_config, monkeypatch: pytest.MonkeyPatch, mode: str, module: object
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch, mode: str, module: object
 ) -> None:
     """Each single-step mode runs its own step."""
     calls: list[object] = []
@@ -293,7 +320,9 @@ def test_run_dispatches_by_mode(
     assert calls == [1]
 
 
-def test_run_dispatches_full_mode(make_config, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_dispatches_full_mode(
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The `full` mode runs the full loop."""
     calls: list[object] = []
     monkeypatch.setattr(cli_launcher, "run_full", lambda *_a, **_k: calls.append(1) or 0)
@@ -305,7 +334,7 @@ def test_run_dispatches_full_mode(make_config, monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_run_falls_back_to_interactive_menu_when_mode_is_none(
-    make_config,
+    make_config: "MakeConfig",
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Without a mode, the interactive menu is shown."""
@@ -319,7 +348,7 @@ def test_run_falls_back_to_interactive_menu_when_mode_is_none(
 
 
 def test_run_full_stops_when_an_iteration_makes_no_progress(
-    make_config, monkeypatch: pytest.MonkeyPatch
+    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """URLs the archive doesn't have aren't re-requested until --max-iterations."""
     counts = [3, 2, 2]
@@ -345,3 +374,22 @@ def test_max_iterations_must_be_positive(value: str) -> None:
 
     with pytest.raises(SystemExit):
         _ = parser.parse_args(["--max-iterations", value])
+
+
+def test_logs_go_to_a_folder_and_old_ones_are_pruned(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each run's log lands in logs/, and only the most recent files are kept."""
+    monkeypatch.chdir(tmp_path)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    for index in range(logging_utils.KEPT_LOG_FILES + 5):
+        old = logs / f"wmdc-{index}.log"
+        _ = old.write_text("x", encoding="utf-8")
+        os.utime(old, (index, index))
+
+    logging_utils.configure_logging("wmdc")
+
+    assert len(list(logs.glob("wmdc-*.log*"))) == logging_utils.KEPT_LOG_FILES
+    assert (logs / f"wmdc-{os.getpid()}.log").exists()
+    assert not (logs / "wmdc-0.log").exists()

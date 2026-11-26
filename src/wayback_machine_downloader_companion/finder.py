@@ -191,7 +191,7 @@ def scan(config: "AppConfig") -> FinderResult:
     Returns:
         FinderResult: Whether a scan happened, and how many resources are missing.
     """
-    files = sorted(config.folder_output.rglob("*.*"))
+    files = [path for path in config.folder_output.rglob("*.*") if path.is_file()]
     if not files:
         logger.warning("Nothing found in %s -- Aborting", config.folder_output)
         return FinderResult(scanned=False, missing_count=0)
@@ -226,4 +226,5 @@ def run(config: "AppConfig", args: "argparse.Namespace") -> int:
     Returns:
         int: ``0`` on success, ``1`` if nothing was found to scan.
     """
+    del args
     return 0 if scan(config).scanned else 1

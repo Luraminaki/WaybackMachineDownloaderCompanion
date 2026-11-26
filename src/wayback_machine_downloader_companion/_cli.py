@@ -30,14 +30,14 @@ def build_parser(
         argparse.ArgumentParser: The configured parser.
     """
     parser = argparse.ArgumentParser(prog=prog_name, description=description)
-    parser.add_argument(
+    _ = parser.add_argument(
         "-c",
         "--configuration",
         type=pathlib.Path,
         default=pathlib.Path("config.json"),
         help="Path to config.json (default: ./config.json)",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -86,6 +86,6 @@ def main(
 
     try:
         return run_callable(config, args)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught  # top-level crash handler
         logger.exception("Unhandled error in %s", prog_name)
         return 1

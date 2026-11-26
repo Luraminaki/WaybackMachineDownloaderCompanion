@@ -15,6 +15,8 @@ from wayback_machine_downloader_companion.finder import (
 if TYPE_CHECKING:
     import pathlib
 
+    from tests.conftest import MakeConfig
+
 
 def test_get_all_files_matches_exact_suffix(tmp_path: "pathlib.Path") -> None:
     """Files are matched on their exact suffix, not a substring."""
@@ -47,7 +49,7 @@ def test_sort_data_reports_are_mutually_disjoint() -> None:
 
 
 def test_export_missing_translates_local_paths_to_urls(
-    tmp_path: "pathlib.Path", make_config
+    tmp_path: "pathlib.Path", make_config: "MakeConfig"
 ) -> None:
     """Missing local paths are exported as the URLs to download."""
     config = make_config(web_folder="example.com", web_output="example.com_output")
@@ -60,7 +62,7 @@ def test_export_missing_translates_local_paths_to_urls(
     assert content == "https://example.com/sub/page.htm\n"
 
 
-def test_scan_reports_not_scanned_when_output_folder_empty(make_config) -> None:
+def test_scan_reports_not_scanned_when_output_folder_empty(make_config: "MakeConfig") -> None:
     """An empty output folder is reported as not scanned."""
     config = make_config()
     config.folder_output.mkdir(parents=True)
@@ -71,14 +73,14 @@ def test_scan_reports_not_scanned_when_output_folder_empty(make_config) -> None:
     assert result.missing_count == 0
 
 
-def test_scan_counts_missing_resources_and_writes_files(make_config) -> None:
+def test_scan_counts_missing_resources_and_writes_files(make_config: "MakeConfig") -> None:
     """Regression test: cli_launcher used to re-read missing_*.txt to get this same count.
 
     scan() now returns the count directly so callers don't need a redundant disk round-trip.
     """
     config = make_config()
     config.folder_output.mkdir(parents=True)
-    (config.folder_output / "index.htm").write_text(
+    _ = (config.folder_output / "index.htm").write_text(
         '<a href="missing.htm">x</a><img src="missing.png">',
         encoding="utf-8",
     )
@@ -91,16 +93,18 @@ def test_scan_counts_missing_resources_and_writes_files(make_config) -> None:
     assert (config.base_dir / "missing_other.txt").exists()
 
 
-def test_run_returns_zero_when_scanned(make_config) -> None:
+def test_run_returns_zero_when_scanned(make_config: "MakeConfig") -> None:
     """A completed scan returns 0."""
     config = make_config()
     config.folder_output.mkdir(parents=True)
-    (config.folder_output / "index.htm").write_text('<a href="other.htm">x</a>', encoding="utf-8")
+    _ = (config.folder_output / "index.htm").write_text(
+        '<a href="other.htm">x</a>', encoding="utf-8"
+    )
 
     assert run(config, argparse.Namespace()) == 0
 
 
-def test_run_returns_one_when_nothing_to_scan(make_config) -> None:
+def test_run_returns_one_when_nothing_to_scan(make_config: "MakeConfig") -> None:
     """Nothing to scan returns 1."""
     config = make_config()
     config.folder_output.mkdir(parents=True)
@@ -108,7 +112,7 @@ def test_run_returns_one_when_nothing_to_scan(make_config) -> None:
     assert run(config, argparse.Namespace()) == 1
 
 
-def test_export_builds_urls_from_the_path_inside_the_output(make_config) -> None:
+def test_export_builds_urls_from_the_path_inside_the_output(make_config: "MakeConfig") -> None:
     """URLs come from the path inside the output folder, percent-encoded.
 
     Regression test: a plain text replace turned `out/layout/out.css` into `laysite/site.css`.
