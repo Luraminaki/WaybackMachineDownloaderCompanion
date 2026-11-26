@@ -3,6 +3,8 @@
 
 import dataclasses
 import logging
+import pathlib
+import urllib.parse
 from typing import TYPE_CHECKING
 
 from wayback_machine_downloader_companion.config import (
@@ -10,11 +12,14 @@ from wayback_machine_downloader_companion.config import (
     MISSING_OTHER_FILE,
     UNSPECIFIED_FILE,
 )
-from wayback_machine_downloader_companion.html_parser import WBMHTMLParser, find_all_links
+from wayback_machine_downloader_companion.html_parser import (
+    WBMHTMLParser,
+    find_all_links,
+    is_external,
+)
 
 if TYPE_CHECKING:
     import argparse
-    import pathlib
 
     from wayback_machine_downloader_companion.config import (
         AppConfig,
@@ -116,20 +121,46 @@ def sort_data(
     return report
 
 
+def to_wayback_url(link: str, config: "AppConfig") -> str | None:
+    """Turns a local resource path back into the site URL to download.
+
+    Args:
+        link (str): A resolved local path inside the output folder (posix style).
+        config (AppConfig): The active configuration.
+
+    Returns:
+        str | None: ``https://<WEB_FOLDER>/<path relative to WEB_OUTPUT>``, percent-encoded;
+        ``None`` if ``link`` isn't inside the output folder.
+    """
+    path, output = (
+        pathlib.PurePosixPath(link),
+        pathlib.PurePosixPath(config.folder_output.as_posix()),
+    )
+    if not path.is_relative_to(output):
+        return None
+    relative = path.relative_to(output).as_posix()
+    return f"https://{config.web_folder}/{urllib.parse.quote(relative)}"
+
+
 def export_missing(file_path: "pathlib.Path", missing: list[str], config: "AppConfig") -> None:
-    """Exports a list of missing resources into a writable file, as remote wayback URLs.
+    """Exports resources into a file, one URL per line.
+
+    Local paths are turned back into site URLs (see :func:`to_wayback_url`); external links
+    are written as they are; local paths outside the output folder are left out.
 
     Args:
         file_path (pathlib.Path): Destination file path.
-        missing (list[str]): Local-style resource paths to translate back into URLs.
+        missing (list[str]): Resolved local paths, or external links.
         config (AppConfig): The active configuration, used to translate local paths into URLs.
     """
     logger.info("Saving %s", file_path)
-    with file_path.open("w", encoding="utf-8") as export_file:
-        for link in missing:
-            line = link.replace(config.base_dir.as_posix(), "https:/")
-            line = line.replace(config.web_output, config.web_folder)
-            export_file.write(line + "\n")
+    lines = [link if is_external(link) else to_wayback_url(link, config) for link in missing]
+    skipped = lines.count(None)
+    if skipped:
+        logger.warning(
+            "%d link(s) outside %s left out of %s", skipped, config.folder_output, file_path
+        )
+    _ = file_path.write_text("".join(f"{line}\n" for line in lines if line is not None), "utf-8")
 
 
 @dataclasses.dataclass(slots=True)

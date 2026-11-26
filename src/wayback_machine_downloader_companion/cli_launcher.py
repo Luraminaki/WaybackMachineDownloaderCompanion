@@ -44,13 +44,9 @@ def _positive_int(text: str) -> int:
     Raises:
         argparse.ArgumentTypeError: ``text`` isn't an integer >= 1.
     """
-    try:
-        value = int(text)
-    except ValueError:
-        value = 0
-    if value < 1:
+    if not text.isdecimal() or int(text) < 1:
         raise argparse.ArgumentTypeError(f"expected an integer >= 1, got {text!r}")
-    return value
+    return int(text)
 
 
 def configure_parser(parser: "argparse.ArgumentParser") -> None:

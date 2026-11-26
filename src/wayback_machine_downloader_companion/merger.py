@@ -13,7 +13,6 @@ So re-running a merge is safe: files fetched later by ``wmdc-download``, and man
 are never overwritten.
 """
 
-import contextlib
 import dataclasses
 import json
 import logging
@@ -139,11 +138,11 @@ def _load_manifest(path: "pathlib.Path") -> dict[str, dict[str, object]]:
     Returns:
         dict: Relative path -> what the last merge wrote there; empty if absent or unreadable.
     """
+    if not path.exists():
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError) as error:  # unreadable, or not JSON
         logger.warning("Ignoring unreadable merge manifest %s -- %s", path, error)
         return {}
     return data if isinstance(data, dict) else {}
@@ -197,8 +196,7 @@ def _copy_atomically(source: "pathlib.Path", destination: "pathlib.Path") -> Non
         _ = shutil.copy2(source, temporary)
         _ = temporary.replace(destination)
     finally:
-        with contextlib.suppress(FileNotFoundError):
-            temporary.unlink()
+        temporary.unlink(missing_ok=True)  # left only if the copy failed
 
 
 def _check_folders(config: "AppConfig") -> str | None:

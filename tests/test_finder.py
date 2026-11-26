@@ -106,3 +106,26 @@ def test_run_returns_one_when_nothing_to_scan(make_config) -> None:
     config.folder_output.mkdir(parents=True)
 
     assert run(config, argparse.Namespace()) == 1
+
+
+def test_export_builds_urls_from_the_path_inside_the_output(make_config) -> None:
+    """URLs come from the path inside the output folder, percent-encoded.
+
+    Regression test: a plain text replace turned `out/layout/out.css` into `laysite/site.css`.
+    """
+    config = make_config(web_folder="site", web_output="out")
+    export_file = config.base_dir / "export.txt"
+    links = [
+        (config.folder_output / "layout" / "out.css").as_posix(),
+        (config.folder_output / "my page.htm").as_posix(),
+        "https://cdn.example.com/x.js",
+        "/etc/passwd",
+    ]
+
+    export_missing(export_file, links, config)
+
+    assert export_file.read_text(encoding="utf-8").splitlines() == [
+        "https://site/layout/out.css",
+        "https://site/my%20page.htm",
+        "https://cdn.example.com/x.js",
+    ]
