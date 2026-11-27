@@ -4,10 +4,11 @@
 import argparse
 import logging
 import pathlib
+import sys
 from collections.abc import Callable
 
 from wayback_machine_downloader_companion.config import AppConfig, ConfigError
-from wayback_machine_downloader_companion.logging_utils import configure_logging
+from wayback_machine_downloader_companion.logging_utils import LOG_DIR, configure_logging
 
 RunCallable = Callable[[AppConfig, argparse.Namespace], int]
 ConfigureParser = Callable[[argparse.ArgumentParser], None]
@@ -70,14 +71,23 @@ def main(
             parses ``sys.argv[1:]``.
 
     Returns:
-        int: The process exit code: the one ``run_callable`` returns, or ``1`` on a
-        configuration error or an unhandled exception. Invalid arguments make ``argparse``
-        exit with code ``2`` instead of returning.
+        int: The process exit code: the one ``run_callable`` returns, or ``1`` when the log
+        folder can't be written, on a configuration error, or on an unhandled exception.
+        Invalid arguments make ``argparse`` exit with code ``2`` instead of returning.
     """
     parser = build_parser(prog_name, description, configure_parser)
     args = parser.parse_args(argv)
 
-    configure_logging(prog_name, args.verbose)
+    if LOG_DIR.exists() and not LOG_DIR.is_dir():
+        print(
+            f"{prog_name}: can't write logs to {LOG_DIR.absolute()}: not a folder", file=sys.stderr
+        )
+        return 1
+    try:
+        configure_logging(prog_name, args.verbose)
+    except OSError as error:  # e.g. a read-only working directory
+        print(f"{prog_name}: can't write logs to {LOG_DIR.absolute()}: {error}", file=sys.stderr)
+        return 1
     logger = logging.getLogger(prog_name)
 
     try:

@@ -4,6 +4,7 @@
 import logging
 import os
 import pathlib
+import re
 from logging.handlers import RotatingFileHandler
 
 _DEFAULT_MAX_BYTES = 5 * 1024 * 1024
@@ -17,16 +18,39 @@ KEPT_LOG_FILES = 20
 def _prune_old_logs(log_dir: pathlib.Path, log_file_stem: str, keep: int) -> None:
     """Deletes the oldest log files of a program, keeping the most recent ones.
 
+    Only the program's own files count: ``<stem>-<pid>.log`` and its rotated
+    ``<stem>-<pid>.log.<n>``. A plain ``<stem>-*`` glob would also take ``wmdc-merge-*``
+    files for ``wmdc`` ones.
+
     Args:
         log_dir (pathlib.Path): The log folder.
         log_file_stem (str): The program's log file stem.
         keep (int): How many of its log files (rotated ones included) to keep.
     """
-    files = sorted(
-        log_dir.glob(f"{log_file_stem}-*.log*"), key=lambda file: file.stat().st_mtime, reverse=True
-    )
-    for old in files[keep:]:
+    own_name = re.compile(rf"{re.escape(log_file_stem)}-\d+\.log(?:\.\d+)?")
+    dated = [
+        (mtime, file)
+        for file in log_dir.glob(f"{log_file_stem}-*.log*")
+        if own_name.fullmatch(file.name) and (mtime := _mtime(file)) is not None
+    ]
+    dated.sort(reverse=True)
+    for _, old in dated[keep:]:
         _delete_if_possible(old)
+
+
+def _mtime(path: pathlib.Path) -> float | None:
+    """Reads a file's modification time.
+
+    Args:
+        path (pathlib.Path): The file.
+
+    Returns:
+        float | None: Its mtime, or ``None`` if it no longer exists.
+    """
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:  # another run, pruning the same folder, deleted it first
+        return None
 
 
 def _delete_if_possible(path: pathlib.Path) -> None:

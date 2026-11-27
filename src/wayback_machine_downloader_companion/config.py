@@ -65,7 +65,8 @@ class AppConfig:
                 ``WEB_OUTPUT``.
         """
         try:
-            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            # utf-8-sig also accepts the BOM some editors (Windows Notepad) put at the start.
+            raw = json.loads(config_path.read_text(encoding="utf-8-sig"))
         except FileNotFoundError as error:
             raise FileNotFoundError(f"Config file not found: {config_path}") from error
         except (OSError, UnicodeDecodeError) as error:

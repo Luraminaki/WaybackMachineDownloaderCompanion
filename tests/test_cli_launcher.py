@@ -1,8 +1,10 @@
-"""Tests for wayback_machine_downloader_companion.cli_launcher."""
+"""Tests for wayback_machine_downloader_companion.cli_launcher: options, menu and dispatch.
+
+The full run's loop is tested in ``test_cli_launcher_full.py``.
+"""
 
 import argparse
 import logging
-import os
 import pathlib
 from typing import TYPE_CHECKING
 
@@ -13,10 +15,8 @@ from wayback_machine_downloader_companion import (
     cli_launcher,
     downloader,
     finder,
-    logging_utils,
     merger,
 )
-from wayback_machine_downloader_companion.finder import FinderResult
 
 if TYPE_CHECKING:
     from tests.conftest import MakeConfig
@@ -63,166 +63,19 @@ def test_needs_merge_false_when_snapshot_folder_vanishes_during_check(
     config.folder_snapshots.mkdir(parents=True)
 
     def raise_oserror(_self: pathlib.Path) -> None:
+        """Fail like a folder deleted between the check and the listing.
+
+        Args:
+            _self: Ignored.
+
+        Raises:
+            OSError: Always.
+        """
         raise OSError("vanished")
 
     monkeypatch.setattr(pathlib.Path, "iterdir", raise_oserror)
 
     assert cli_launcher.needs_merge(config) is False
-
-
-def test_run_full_aborts_without_scanning_when_merge_fails(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failed merge stops the full run before any scan."""
-    config = make_config()
-    (config.folder_snapshots / "20230601000000").mkdir(parents=True)
-
-    monkeypatch.setattr(merger, "run", lambda *_a, **_k: 1)
-    scan_calls: list[object] = []
-    monkeypatch.setattr(finder, "scan", lambda _config: scan_calls.append(1))
-
-    result = cli_launcher.run_full(config, argparse.Namespace(force_merge=False, max_iterations=3))
-
-    assert result == 1
-    assert scan_calls == []
-
-
-def test_run_full_returns_zero_when_nothing_missing_on_first_pass(
-    make_config: "MakeConfig",
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Nothing missing on the first pass: success, no download."""
-    config = make_config()
-    monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=0))
-    download_calls: list[object] = []
-    monkeypatch.setattr(downloader, "run", lambda *_a, **_k: download_calls.append(1) or 0)
-
-    result = cli_launcher.run_full(config, argparse.Namespace(force_merge=False, max_iterations=3))
-
-    assert result == 0
-    assert download_calls == []
-
-
-def test_run_full_loops_until_nothing_missing(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The full run alternates scan and download until nothing is missing."""
-    results = [
-        FinderResult(scanned=True, missing_count=2),
-        FinderResult(scanned=True, missing_count=0),
-    ]
-    monkeypatch.setattr(finder, "scan", lambda _config: results.pop(0))
-    download_calls: list[object] = []
-    monkeypatch.setattr(downloader, "run", lambda *_a, **_k: download_calls.append(1) or 0)
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=5)
-    )
-
-    assert result == 0
-    assert len(download_calls) == 1
-
-
-def test_run_full_returns_one_when_nothing_to_scan(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An empty output folder is an error: there is nothing to scan."""
-    monkeypatch.setattr(
-        finder, "scan", lambda _config: FinderResult(scanned=False, missing_count=0)
-    )
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=3)
-    )
-
-    assert result == 1
-
-
-def test_run_full_returns_one_when_max_iterations_exhausted(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Regression test: run_full used to always return 0, even when it never converged."""
-    monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=1))
-    monkeypatch.setattr(downloader, "run", lambda *_a, **_k: 0)
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=2)
-    )
-
-    assert result == 1
-
-
-def test_run_full_returns_one_when_merge_raises(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An unexpected error names the step and iteration it happened in.
-
-    Regression test: it used to surface as a single generic 'Unhandled error'.
-    """
-    config = make_config()
-    (config.folder_snapshots / "20230601000000").mkdir(parents=True)
-
-    def raise_error(*_a: object, **_k: object) -> int:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(merger, "run", raise_error)
-
-    result = cli_launcher.run_full(config, argparse.Namespace(force_merge=False, max_iterations=3))
-
-    assert result == 1
-
-
-def test_run_full_returns_one_when_finder_scan_raises(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A scan that raises ends the full run with code 1."""
-
-    def raise_error(_config: object) -> FinderResult:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(finder, "scan", raise_error)
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=3)
-    )
-
-    assert result == 1
-
-
-def test_run_full_returns_one_when_downloader_raises(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A download that raises ends the full run with code 1."""
-    monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=1))
-
-    def raise_error(*_a: object, **_k: object) -> int:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(downloader, "run", raise_error)
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=3)
-    )
-
-    assert result == 1
-
-
-def test_run_full_checks_for_unspecified_leftovers_when_done(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A finished full run reports links it couldn't classify."""
-    monkeypatch.setattr(finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=0))
-    calls: list[object] = []
-    monkeypatch.setattr(
-        cli_launcher, "_warn_if_unspecified_remain", lambda _config: calls.append(1)
-    )
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=3)
-    )
-
-    assert result == 0
-    assert calls == [1]
 
 
 def test_warn_if_unspecified_remain_logs_when_file_has_entries(
@@ -258,6 +111,14 @@ def test_run_interactive_returns_one_on_eof(
     """End of input in the menu exits with code 1."""
 
     def raise_eof(_prompt: str = "") -> str:
+        """Answer like a closed standard input.
+
+        Args:
+            _prompt: Ignored.
+
+        Raises:
+            EOFError: Always.
+        """
         raise EOFError
 
     monkeypatch.setattr("builtins.input", raise_eof)
@@ -347,25 +208,6 @@ def test_run_falls_back_to_interactive_menu_when_mode_is_none(
     assert calls == [1]
 
 
-def test_run_full_stops_when_an_iteration_makes_no_progress(
-    make_config: "MakeConfig", monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """URLs the archive doesn't have aren't re-requested until --max-iterations."""
-    counts = [3, 2, 2]
-    monkeypatch.setattr(
-        finder, "scan", lambda _config: FinderResult(scanned=True, missing_count=counts.pop(0))
-    )
-    downloads: list[int] = []
-    monkeypatch.setattr(downloader, "run", lambda *_a, **_k: downloads.append(1) or 1)
-
-    result = cli_launcher.run_full(
-        make_config(), argparse.Namespace(force_merge=False, max_iterations=10)
-    )
-
-    assert result == 1
-    assert len(downloads) == 2
-
-
 @pytest.mark.parametrize("value", ["0", "-1", "two"])
 def test_max_iterations_must_be_positive(value: str) -> None:
     """`--max-iterations 0` used to skip the loop and then report it reached the limit."""
@@ -376,20 +218,54 @@ def test_max_iterations_must_be_positive(value: str) -> None:
         _ = parser.parse_args(["--max-iterations", value])
 
 
-def test_logs_go_to_a_folder_and_old_ones_are_pruned(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+def test_max_iterations_option_is_parsed() -> None:
+    """``--max-iterations 3`` is the integer 3."""
+    parser = _cli.build_parser("wmdc", "test", configure_parser=cli_launcher.configure_parser)
+
+    assert parser.parse_args(["--max-iterations", "3"]).max_iterations == 3
+
+
+@pytest.mark.parametrize(
+    ("choice", "module", "name"),
+    [
+        ("1", cli_launcher, "run_full"),
+        ("2", merger, "run"),
+        (" 3 ", finder, "run"),
+        ("4", downloader, "run"),
+    ],
+)
+def test_menu_choice_runs_its_step(
+    make_config: "MakeConfig",
+    monkeypatch: pytest.MonkeyPatch,
+    choice: str,
+    module: object,
+    name: str,
 ) -> None:
-    """Each run's log lands in logs/, and only the most recent files are kept."""
-    monkeypatch.chdir(tmp_path)
-    logs = tmp_path / "logs"
-    logs.mkdir()
-    for index in range(logging_utils.KEPT_LOG_FILES + 5):
-        old = logs / f"wmdc-{index}.log"
-        _ = old.write_text("x", encoding="utf-8")
-        os.utime(old, (index, index))  # pathlib has no API to set a file's times
+    """Each menu number runs its own step (surrounding spaces ignored), with its exit code."""
+    monkeypatch.setattr("builtins.input", lambda _prompt="": choice)
+    calls: list[int] = []
+    monkeypatch.setattr(module, name, lambda *_a, **_k: calls.append(1) or 4)
 
-    logging_utils.configure_logging("wmdc")
+    assert cli_launcher.run_interactive(make_config(), argparse.Namespace()) == 4
+    assert calls == [1]
 
-    assert len(list(logs.glob("wmdc-*.log*"))) == logging_utils.KEPT_LOG_FILES
-    assert (logs / f"wmdc-{os.getpid()}.log").exists()
-    assert not (logs / "wmdc-0.log").exists()
+
+def test_warn_if_unspecified_remain_silent_when_file_is_blank(
+    make_config: "MakeConfig", caplog: pytest.LogCaptureFixture
+) -> None:
+    """An unspecified-links file with only blank lines is nothing to report."""
+    config = make_config()
+    _ = (config.base_dir / "unspecified.txt").write_text("\n  \n\t\n", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        cli_launcher._warn_if_unspecified_remain(config)  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
+
+    assert caplog.text == ""
+
+
+def test_needs_merge_false_when_web_folder_is_a_file(make_config: "MakeConfig") -> None:
+    """A file where the snapshot folder should be has nothing to merge."""
+    config = make_config()
+    _ = config.folder_snapshots.write_text("not a folder", encoding="utf-8")
+
+    assert cli_launcher.needs_merge(config) is False

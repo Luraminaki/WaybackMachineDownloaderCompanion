@@ -163,7 +163,8 @@ def _scan_step(config: "AppConfig", iteration: int) -> "finder.FinderResult | No
         iteration (int): The loop's iteration number, for the logs.
 
     Returns:
-        FinderResult | None: The scan, or ``None`` if it raised or found nothing to scan.
+        finder.FinderResult | None: The scan's result (how many resources are missing, and
+        the URLs it exported for download); ``None`` if it raised or found nothing to scan.
     """
     try:
         result = finder.scan(config)
@@ -206,34 +207,38 @@ def run_full(config: "AppConfig", args: "argparse.Namespace") -> int:
     Returns:
         int: ``0`` if the run finished with nothing missing, ``1`` if nothing was found to
         scan, a step raised an unexpected error, the merge step failed, an iteration made no
-        progress, or ``--max-iterations`` was reached without finishing.
+        progress (none of the URLs missing before it was downloaded), or ``--max-iterations``
+        was reached without finishing.
     """
     if not _merge_step(config, args):
         return 1
 
-    previous_missing: int | None = None
+    previous_urls: frozenset[str] | None = None
     for iteration in range(1, args.max_iterations + 1):
-        result = _scan_step(config, iteration)
-        if result is None:
+        scanned = _scan_step(config, iteration)
+        if scanned is None:
             return 1
+        missing_count, missing_urls = scanned.missing_count, scanned.missing_urls
 
-        if result.missing_count == 0:
+        if missing_count == 0:
             logger.info("Nothing missing after %d iteration(s)", iteration)
             _warn_if_unspecified_remain(config)
             return 0
 
-        # The same URLs failing again would only re-request them from the archive.
-        if previous_missing is not None and result.missing_count >= previous_missing:
+        # Progress means the last downloads resolved at least one URL. The count alone can't
+        # tell: fetched pages may reference more new files than were fetched. If every URL is
+        # still missing, the next pass would only re-request them from the archive.
+        if previous_urls is not None and previous_urls <= missing_urls:
             logger.warning(
                 "No progress in iteration %d (%d still missing) -- stopping; see %s and %s in %s",
                 iteration,
-                result.missing_count,
+                missing_count,
                 MISSING_HTML_FILE,
                 MISSING_OTHER_FILE,
                 config.base_dir,
             )
             return 1
-        previous_missing = result.missing_count
+        previous_urls = missing_urls
 
         if not _download_step(config, args, iteration):
             return 1

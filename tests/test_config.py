@@ -74,7 +74,7 @@ def test_missing_file_raises_file_not_found(tmp_path: "pathlib.Path") -> None:
         _ = AppConfig.load(tmp_path / "nope.json")
 
 
-@pytest.mark.parametrize("value", [".", "..", "a/b", "../site", "/abs"])
+@pytest.mark.parametrize("value", [".", "..", "a/b", "../site", "/abs", "a\\b", "C:\\x"])
 def test_folder_settings_must_be_plain_names(tmp_path: "pathlib.Path", value: str) -> None:
     """A path instead of a folder name is refused: it could aim the merge anywhere."""
     config_path = tmp_path / "config.json"
@@ -88,3 +88,70 @@ def test_unreadable_config_is_a_config_error(tmp_path: "pathlib.Path") -> None:
     """A folder given as the config file is a readable `ConfigError`, not a traceback."""
     with pytest.raises(ConfigError, match="Can't read"):
         _ = AppConfig.load(tmp_path)
+
+
+def test_config_with_a_utf8_bom_loads(tmp_path: "pathlib.Path") -> None:
+    """Regression test: a config.json saved with a BOM (Windows Notepad) was invalid JSON."""
+    config_path = tmp_path / "config.json"
+    _ = config_path.write_bytes(b'\xef\xbb\xbf{"WEB_FOLDER": "site.example"}')
+
+    assert AppConfig.load(config_path).web_folder == "site.example"
+
+
+@pytest.mark.parametrize("text", ['["site.example"]', "null", '"site.example"'])
+def test_top_level_must_be_an_object(tmp_path: "pathlib.Path", text: str) -> None:
+    """Valid JSON that isn't an object is refused by name, not with a crash on ``.get``."""
+    config_path = tmp_path / "config.json"
+    _ = config_path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="JSON object"):
+        _ = AppConfig.load(config_path)
+
+
+def test_null_web_output_falls_back_to_the_default(tmp_path: "pathlib.Path") -> None:
+    """``"WEB_OUTPUT": null`` means "not set"."""
+    config_path = tmp_path / "config.json"
+    _ = config_path.write_text('{"WEB_FOLDER": "site", "WEB_OUTPUT": null}', encoding="utf-8")
+
+    assert AppConfig.load(config_path).web_output == "site_output"
+
+
+@pytest.mark.parametrize("value", ["", "  "])
+def test_blank_web_output_is_refused(tmp_path: "pathlib.Path", value: str) -> None:
+    """A blank output folder would be the config folder itself: refused, not defaulted."""
+    config_path = tmp_path / "config.json"
+    _ = config_path.write_text(json.dumps({"WEB_FOLDER": "site", "WEB_OUTPUT": value}), "utf-8")
+
+    with pytest.raises(ConfigError, match="non-empty"):
+        _ = AppConfig.load(config_path)
+
+
+@pytest.mark.parametrize("value", [123, ["site"], True])
+def test_web_folder_must_be_a_string(tmp_path: "pathlib.Path", value: object) -> None:
+    """A number or a list for WEB_FOLDER is a ``ConfigError``, not a later ``TypeError``."""
+    config_path = tmp_path / "config.json"
+    _ = config_path.write_text(json.dumps({"WEB_FOLDER": value}), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="non-empty string"):
+        _ = AppConfig.load(config_path)
+
+
+def test_non_utf8_config_is_a_config_error(tmp_path: "pathlib.Path") -> None:
+    """A config saved in another encoding gives a readable error, not a traceback."""
+    config_path = tmp_path / "config.json"
+    _ = config_path.write_bytes(b'{"WEB_FOLDER": "caf\xe9"}')  # Latin-1
+
+    with pytest.raises(ConfigError, match="Can't read"):
+        _ = AppConfig.load(config_path)
+
+
+@pytest.mark.usefixtures("can_symlink")
+def test_base_dir_follows_a_symlinked_config(tmp_path: "pathlib.Path") -> None:
+    """The site folders sit next to the real config.json, not next to a link to it."""
+    real = tmp_path / "websites"
+    real.mkdir()
+    _ = (real / "config.json").write_text('{"WEB_FOLDER": "site"}', encoding="utf-8")
+    link = tmp_path / "config.json"
+    link.symlink_to(real / "config.json")
+
+    assert AppConfig.load(link).base_dir == real.resolve()
