@@ -7,6 +7,67 @@ The current version lives in [pyproject.toml](pyproject.toml) and is the single 
 truth -- `wayback_machine_downloader_companion.__version__` reads it at runtime instead of
 duplicating it.
 
+## 0.4.0 - 2026-11-27
+
+### Fixed
+
+- Merge no longer crashes when one snapshot has a file where another has a folder (or the
+  reverse): the newest snapshot's path wins and the older one is skipped with a warning. A file
+  whose folder is blocked by a file already in `WEB_OUTPUT` is skipped the same way.
+- Merge no longer fails on very long file names (e.g. 250 bytes): each file is written to a
+  new, short-named `.wmdc-<random>.tmp` file (created exclusively, so a file of the same name
+  is never overwritten) instead of a name derived from the file's.
+- The merge manifest is written atomically, and saved even when a copy fails midway, so the
+  next merge still recognises the files already written. A manifest, or a record in it, that
+  isn't a JSON object gives a warning instead of a crash (existing files are kept as is).
+- A `.wmdc-merge.json` at the root of a snapshot is no longer copied over the output's own.
+- `wmdc-find` no longer counts the merge manifest as a site resource. An output holding no
+  site file (only a leftover `.wmdc-*.tmp`, or files of other types) is "nothing to scan",
+  so `wmdc --mode full` no longer reports success on it.
+- `wmdc-find` writes nothing in `WEB_OUTPUT`: a read-only output is scanned instead of failing
+  with "Unhandled error".
+- On Windows, missing local files were exported as raw `C:/...` paths instead of Wayback
+  URLs.
+- A link to the site root was exported as `https://<host>/.`; it is now `https://<host>/`.
+- A UTF-8 byte order mark at the start of a page or of `config.json` (as Windows Notepad
+  writes) is accepted.
+- `wmdc --mode full` stopped with exit code 1 when downloaded pages revealed more missing
+  files than they resolved: it now stops for "no progress" only when every URL missing before
+  an iteration is still missing after its downloads (newly found URLs no longer count against
+  it). Each iteration uses the URLs the scan exported instead of reading its files back.
+- Log pruning deleted other commands' logs (`wmdc` matched `wmdc-merge-*` files), and crashed
+  if another run deleted a log at the same time.
+- `wmdc-download` runs the full path of `wayback_machine_downloader` (on Windows, RubyGems
+  installs a `.bat` the bare name didn't start). When the tool can't be started at all, the
+  run stops at once with one error naming it (exit code 1) instead of failing every
+  remaining URL in turn, each after a 1 s pause.
+- An unusable `logs/` folder gives a one-line error and exit code 1 instead of a traceback.
+- A `missing_html.txt` / `missing_other.txt` that isn't UTF-8 (edited by hand) is one clear
+  error, exit code 1.
+
+### Changed
+
+- A backslash in a link counts as `/` on every OS, as browsers read it (`images\logo.gif` is
+  `images/logo.gif`).
+- On a case-insensitive output filesystem (macOS and Windows defaults), `wmdc-find` matches
+  links to local files whatever their case (links differing only by case are listed once), and
+  the merge treats such names as one file, warning when it skips an older spelling. Case is
+  folded as those filesystems do (simple lower case: `straße` and `strasse` stay two files),
+  and detected without writing anything. The merge manifest keeps each file's own name, so an
+  output moved to a filesystem that handles case differently still takes updates.
+- Symlinks inside snapshots are skipped with a warning instead of being followed.
+- The merge manifest is no longer rewritten when nothing was written, nor indented.
+- Faster merge (6,905-file synthetic site, best of 3: fresh merge 0.430 s -> 0.242 s, re-run
+  0.284 s -> 0.068 s, peak memory 33 MiB -> 30 MiB) and `wmdc-find` (3.19 s -> 2.37 s, same
+  memory).
+
+### Added
+
+- Development: 360 tests (from 91), passing on Python 3.10, 3.12 and 3.13, including a guard
+  that refuses network (`connect` and `connect_ex`) and unpatched subprocess calls, and
+  convention tests (docstrings, imports, dead and duplicated code, radon complexity, module
+  length).
+
 ## 0.3.0 - 2026-11-26
 
 ### Fixed

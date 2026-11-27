@@ -91,18 +91,24 @@ For scripting, pass `--mode` instead of using the menu.
 | `--max-iterations N` | `wmdc` | Maximum find/download loops in full mode (default: 10, must be >= 1). |
 
 The full run merges first if `WEB_FOLDER` holds versioned (`-s`) snapshot folders (this detection only happens in full mode), then loops find -> download until nothing is missing.
-It also stops (exit code 1) when an iteration makes no progress (the missing count didn't shrink), or after `--max-iterations` loops.
+It also stops (exit code 1) when an iteration makes no progress (every URL missing before the last downloads is still missing -- newly found ones don't count), or after `--max-iterations` loops.
 
 Each step is also its own command: `wmdc-merge`, `wmdc-find`, `wmdc-download`.
 
 - `wmdc-merge` copies the most recent version of every file of the `-s` snapshot folders into `WEB_OUTPUT`. It never deletes anything, and re-running it is safe: a file is only replaced by a newer snapshot, and only if it is unchanged since the last merge, so later downloads and manual edits survive (it keeps track in a `.wmdc-merge.json` file in `WEB_OUTPUT`). It refuses to run when `WEB_OUTPUT` and `WEB_FOLDER` are the same folder or nested in each other.
+  - When the newest snapshot has a file where an older one has a folder (or the reverse), the newest wins and the older path is skipped with a warning; so is a file whose folder is blocked by a file already in `WEB_OUTPUT`.
+  - Symlinks inside snapshots are skipped with a warning, never followed.
+  - On a case-insensitive filesystem (the macOS and Windows defaults), names differing only by case (`A.html`, `a.html`) are one file: the newest snapshot's wins, and the older one is skipped with a warning. Only simple upper/lower case counts, as those filesystems compare it: `straße.html` and `strasse.html` stay two files. `.wmdc-merge.json` records each file under its own name, so the output can move to a filesystem that handles case differently. The case handling is detected without writing anything, from names already in `WEB_OUTPUT` (or in the snapshots when it is empty).
+  - Each file is written to a new `.wmdc-<random>.tmp` file next to it, then renamed; an existing file is never used as the temporary one.
 - `wmdc-find` parses every downloaded HTML page in `WEB_OUTPUT` and writes the missing resources, as URLs, next to `config.json`:
   - `missing_html.txt` -- missing pages (`.htm`, `.html`);
   - `missing_other.txt` -- missing resources with a known extension (images, CSS, JS, fonts, PDF...);
   - `unspecified.txt` -- external links and links with an unknown extension. **It is never downloaded automatically**: check it by hand. Links that leave the site folder (e.g. too many `../`) are listed there too, as written in the page.
-- `wmdc-download` feeds every URL of `missing_html.txt` and `missing_other.txt` (each one once) to `wayback_machine_downloader -e -d <WEB_OUTPUT>`, so the files land where `wmdc-find` looks, with a 1 s pause between downloads and a 600 s timeout per URL. A download counts as successful only if the tool exits with code 0, reports `Download finished` and no `Download completed with errors`. The tool retries failed requests itself.
 
-Logs go to `logs/<command>-<pid>.log` under the directory you ran the command from; only the 20 most recent log files of each command are kept.
+  A backslash in a link counts as `/` on every OS, as browsers read it (`images\logo.gif` is `images/logo.gif`). On a case-insensitive filesystem, a link matches its local file whatever the case of either, and links differing only by case are listed once. Only site files (the extensions above) count: a `WEB_OUTPUT` holding none of them has nothing to scan (exit code 1). The scan writes nothing in `WEB_OUTPUT`, which may be read-only.
+- `wmdc-download` feeds every URL of `missing_html.txt` and `missing_other.txt` (each one once) to `wayback_machine_downloader -e -d <WEB_OUTPUT>`, so the files land where `wmdc-find` looks, with a 1 s pause between downloads and a 600 s timeout per URL. A download counts as successful only if the tool exits with code 0, reports `Download finished` and no `Download completed with errors`. The tool retries failed requests itself. If `wayback_machine_downloader` can't be started at all (not executable, a broken `.bat`), the run stops at the first URL with one error naming it, instead of failing every URL in turn. On Windows, RubyGems installs the tool as a `.bat`, which `cmd.exe` runs and parses again: a URL holding `%NAME%`, where `NAME` is an environment variable, can reach the tool altered.
+
+Logs go to `logs/<command>-<pid>.log` under the directory you ran the command from; only the 20 most recent log files of each command are kept. If `logs/` can't be created or written, the command prints a one-line error and exits with code 1.
 
 ### CASE 01
 

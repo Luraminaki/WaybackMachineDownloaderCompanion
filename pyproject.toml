@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wayback-machine-downloader-companion"
-version = "0.3.0"
+version = "0.4.0"
 description = "Companion CLI tools for wayback-machine-downloader: find missing resources, download them, and merge snapshot folders."
 readme = "README.md"
 requires-python = ">=3.10"
