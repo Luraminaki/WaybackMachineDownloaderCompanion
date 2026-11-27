@@ -63,10 +63,10 @@ duplicating it.
 
 ### Added
 
-- Development: 360 tests (from 91), passing on Python 3.10, 3.12 and 3.13, including a guard
+- Development: 400 tests (from 91), passing on Python 3.10, 3.12 and 3.13, including a guard
   that refuses network (`connect` and `connect_ex`) and unpatched subprocess calls, and
-  convention tests (docstrings, imports, dead and duplicated code, radon complexity, module
-  length).
+  convention tests (docstrings, imports, no string retyping a first-party module name, dead
+  and duplicated code, radon complexity, module length).
 
 ## 0.3.0 - 2026-11-26
 

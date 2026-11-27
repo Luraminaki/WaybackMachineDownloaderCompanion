@@ -7,6 +7,10 @@
   fixtures, documented where they are defined).
 * Names are imported from the module that defines them, never through another
   module that happens to import them.
+* No string retypes the dotted name of a first-party module or attribute
+  (``"pkg.module"``, ``"pkg.module.attr"``): take it from the code (``module.__name__``,
+  ``module.logger.name``, ``monkeypatch.setattr(module, "attr", ...)``), or a rename leaves
+  it silently pointing at nothing.
 * No module grows past :data:`MAX_LINES`: a longer one is split by responsibility.
 """
 
@@ -30,6 +34,10 @@ PROPERTY_DECORATORS = {"property", "cached_property"}
 TEST_PREFIX = "test_"
 #: Longest module allowed (owner's rule): split by responsibility beyond it.
 MAX_LINES = 500
+_DOTTED_NAME = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")
+#: Strings allowed to spell a first-party module, each with the reason no attribute can give it.
+HARDCODED_NAME_ALLOWED: frozenset[str] = frozenset()
+_PLANTED_PACKAGE = next(iter(PACKAGES))
 _SECTION_ENTRY = re.compile(r"^\s{4}(\*{0,2}\w+)(?: \(.*?\))?:", re.MULTILINE)
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
@@ -301,6 +309,52 @@ def test_names_are_imported_from_their_defining_module(path: Path) -> None:
     assert not problems, "\n".join(problems)
 
 
+def names_first_party(text: str) -> bool:
+    """Tell whether a string is the dotted name of a first-party module or of an attribute of one.
+
+    Args:
+        text: A string constant from the code.
+
+    Returns:
+        Whether it spells ``pkg.module`` or ``pkg.module.attr`` for a module of :data:`PACKAGES`
+        (a bare package name is not flagged: :data:`PACKAGES` itself has to spell it).
+    """
+    if not _DOTTED_NAME.fullmatch(text):
+        return False
+    return module_path(text) is not None or module_path(text.rpartition(".")[0]) is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "flagged"),
+    [
+        # Built, not written out: as literals they would trip the rule they test.
+        (f"{_PLANTED_PACKAGE}.merger", True),
+        (f"{_PLANTED_PACKAGE}.merger.run", True),
+        (_PLANTED_PACKAGE, False),
+        (f"{_PLANTED_PACKAGE}.merger is slow", False),
+        ("numpy.typing", False),
+        ("config.json", False),
+    ],
+)
+def test_planted_module_names_are_recognised(text: str, flagged: bool) -> None:
+    """The detector flags dotted first-party names only, not prose, files or other packages."""
+    assert names_first_party(text) is flagged
+
+
+@pytest.mark.parametrize("path", python_files(), ids=relative)
+def test_no_string_retypes_a_first_party_name(path: Path) -> None:
+    """Module, logger and monkeypatch-target names come from the code, not from a string."""
+    problems = [
+        f"line {node.lineno}: {node.value!r}: take it from the module instead"
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value not in HARDCODED_NAME_ALLOWED
+        and names_first_party(node.value)
+    ]
+    assert not problems, "\n".join(problems)
+
+
 @pytest.mark.parametrize("path", python_files(), ids=relative)
 def test_modules_stay_short(path: Path) -> None:
     """No module grows past :data:`MAX_LINES` lines."""
@@ -367,10 +421,10 @@ def test_planted_docstring_gaps_are_found() -> None:
 
 def test_planted_re_export_is_found() -> None:
     """A name a module only imports is not one it defines; its own constants and submodules are."""
-    merger = module_path("wayback_machine_downloader_companion.merger")
+    merger = module_path(f"{_PLANTED_PACKAGE}.merger")
 
     assert merger is not None
     assert "MANIFEST_FILE" in defined_names(merger)
     assert "logging" not in defined_names(merger)
-    assert module_path("wayback_machine_downloader_companion.config") is not None
+    assert module_path(f"{_PLANTED_PACKAGE}.config") is not None
     assert module_path("pathlib") is None

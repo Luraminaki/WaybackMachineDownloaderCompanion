@@ -60,7 +60,7 @@ pytest
 ```
 
 Lines are limited to 100 characters (ruff and pylint), and ruff and basedpyright check the code
-against Python 3.10, the oldest supported version. The 360 tests pass on Python 3.10, 3.12 and
+against Python 3.10, the oldest supported version. The tests pass on Python 3.10, 3.12 and
 3.13 (two need a case-insensitive filesystem and skip elsewhere, one a case-sensitive one; the
 symlink tests skip where symlinks can't be created, as on Windows without the privilege, and
 the read-only folder test on Windows or as root). They include convention tests that fail on
