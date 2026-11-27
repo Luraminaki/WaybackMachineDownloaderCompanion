@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""HTML parsing: extract local resource links referenced by downloaded pages.
+r"""HTML parsing: extract local resource links referenced by downloaded pages.
 
 Links are resolved lexically (:func:`normalize`), never through the filesystem: it costs
 no system call per link, doesn't follow symlinks, and gives the same form as the local file
 paths they are compared with. A link that resolves outside the site folder can't be a local
 resource of the site: it is reported as unspecified.
+
+A backslash in a link counts as ``/`` on every OS, the way browsers read the links of old
+Windows-made sites (``images\logo.gif`` is ``images/logo.gif``).
 """
 
 import dataclasses
@@ -16,7 +19,8 @@ from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
-_EXTERNAL_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
+# Protocol-relative (``//host``, or ``\\host`` with browsers' backslash folding) or a scheme.
+_EXTERNAL = re.compile(r"^(?:[/\\]{2}|[a-zA-Z][a-zA-Z0-9+.\-]*:)")
 
 # Tag -> attributes holding a resource link.
 LINK_ATTRIBUTES: dict[str, frozenset[str]] = {
@@ -38,29 +42,31 @@ LINK_ATTRIBUTES: dict[str, frozenset[str]] = {
 }
 
 
-def _strip_query_and_fragment(value: str) -> str:
-    """Strips the query string and fragment off a URL or path value.
+def _clean_link(value: str) -> str:
+    """Keeps the path of a local link: no query string or fragment, ``/`` separators only.
 
     Args:
         value (str): A raw link attribute value.
 
     Returns:
-        str: ``value`` with any ``?query`` and ``#fragment`` suffix removed.
+        str: ``value`` with any ``?query`` and ``#fragment`` suffix removed and its
+        backslashes turned into ``/``.
     """
-    return value.split("#", maxsplit=1)[0].split("?", maxsplit=1)[0]
+    return value.split("#", maxsplit=1)[0].split("?", maxsplit=1)[0].replace("\\", "/")
 
 
 def is_external(value: str) -> bool:
-    """Returns whether a link points off-site rather than to a local resource.
+    r"""Returns whether a link points off-site rather than to a local resource.
 
     Args:
         value (str): A raw link attribute value.
 
     Returns:
-        bool: ``True`` if ``value`` is protocol-relative (``//host/...``) or has a URI scheme
-            (``http:``, ``https:``, ``mailto:``, ``tel:``, ``javascript:``, ...).
+        bool: ``True`` if ``value`` is protocol-relative (``//host/...``, also written
+            ``\\host\...``) or has a URI scheme (``http:``, ``https:``, ``mailto:``,
+            ``javascript:``, ...).
     """
-    return value.startswith("//") or bool(_EXTERNAL_SCHEME.match(value))
+    return bool(_EXTERNAL.match(value))
 
 
 def normalize(path: pathlib.PurePath) -> pathlib.PurePath:
@@ -90,9 +96,10 @@ def normalize(path: pathlib.PurePath) -> pathlib.PurePath:
 def decode_page(data: bytes) -> str:
     """Decodes a downloaded page whatever its encoding.
 
-    UTF-8 first; then cp1252, the usual encoding of older Western pages; Latin-1 last, which
-    accepts any byte. Accented file names in links stay intact (a lossy decoder would turn
-    them into replacement characters that match no local file).
+    UTF-8 first (a byte order mark is dropped); then cp1252, the usual encoding of older
+    Western pages; Latin-1 last, which accepts any byte. Accented file names in links stay
+    intact (a lossy decoder would turn them into replacement characters that match no local
+    file).
 
     Args:
         data (bytes): The raw page.
@@ -101,7 +108,7 @@ def decode_page(data: bytes) -> str:
         str: Its text.
     """
     try:
-        return data.decode("utf-8")
+        return data.decode("utf-8-sig")
     except UnicodeDecodeError:
         pass
     try:
@@ -138,30 +145,34 @@ class WBMHTMLParser(HTMLParser):
         self.other_links: set[str] = set()
         self.unspecified_links: set[str] = set()
         self.current_path: pathlib.PurePath = self.site_root  # until a page sets its own
-        # Resolved links of the current folder: pages of one folder repeat the same links
-        # (menus, images), and pages are visited folder by folder. Cleared when the folder
-        # changes, so it holds at most one folder's distinct links.
-        self._resolved: dict[str, str | None] = {}
+        # Classified links of the current folder (see :meth:`_classify`): pages of one folder
+        # repeat the same links (menus, images), and pages are visited folder by folder.
+        # Cleared when the folder changes, so it holds at most one folder's distinct links.
+        self._classified: dict[str, tuple[set[str], str | None]] = {}
 
-    def _resolve(self, cleaned_value: str) -> str | None:
-        """Resolves a cleaned local link to an absolute path inside the site folder.
+    def _classify(self, cleaned_value: str) -> tuple[set[str], str | None]:
+        """Resolves a cleaned local link and picks the link set it belongs to.
 
         Args:
-            cleaned_value (str): A link value with query string and fragment removed.
+            cleaned_value (str): A link value cleaned by :func:`_clean_link`.
 
         Returns:
-            str | None: The resolved path, posix style; ``None`` if it leaves the site folder.
+            tuple[set[str], str | None]: The link set to store it in, and its resolved
+            absolute path, posix style; ``None`` if it leaves the site folder (it is then
+            unspecified, and stored as written).
         """
-        if cleaned_value in self._resolved:  # `None` is a cached "outside the site"
-            return self._resolved[cleaned_value]
         relative = urllib.parse.unquote(cleaned_value)
         base = self.site_root if relative.startswith("/") else self.current_path
         resolved = normalize(base / relative.lstrip("/"))
         root_parts = self.site_root.parts
-        inside = resolved.parts[: len(root_parts)] == root_parts
-        result = resolved.as_posix() if inside else None
-        self._resolved[cleaned_value] = result
-        return result
+        if resolved.parts[: len(root_parts)] != root_parts:
+            return self.unspecified_links, None
+        suffix = resolved.suffix.lower()
+        if suffix in self.html_ext:
+            return self.html_links, resolved.as_posix()
+        if suffix in self.other_ext:
+            return self.other_links, resolved.as_posix()
+        return self.unspecified_links, resolved.as_posix()
 
     def _record(self, value: str) -> None:
         """Classifies one link value and stores it.
@@ -172,21 +183,15 @@ class WBMHTMLParser(HTMLParser):
         if is_external(value):
             self.unspecified_links.add(value)
             return
-        cleaned_value = _strip_query_and_fragment(value)
+        cleaned_value = _clean_link(value)
         if not cleaned_value:
-            return  # in-page anchor only (e.g. href="#top"), not a resource reference
+            return  # in-page anchor or query only (e.g. href="#top"), not a resource
 
-        resolved = self._resolve(cleaned_value)
-        if resolved is None:
-            self.unspecified_links.add(value)
-            return
-        suffix = pathlib.PurePosixPath(resolved).suffix.lower()
-        if suffix in self.html_ext:
-            self.html_links.add(resolved)
-        elif suffix in self.other_ext:
-            self.other_links.add(resolved)
-        else:
-            self.unspecified_links.add(resolved)
+        classified = self._classified.get(cleaned_value)
+        if classified is None:
+            classified = self._classified[cleaned_value] = self._classify(cleaned_value)
+        links, resolved = classified
+        links.add(value if resolved is None else resolved)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         """Records the resource links of a start tag (``HTMLParser`` lowercases names).
@@ -216,7 +221,7 @@ class WBMHTMLParser(HTMLParser):
         folder_path = normalize(folder.absolute())
         if folder_path != self.current_path:
             self.current_path = folder_path
-            self._resolved.clear()
+            self._classified.clear()
         try:
             self.feed(text)
             self.close()  # process what the page left buffered
@@ -228,17 +233,19 @@ class WBMHTMLParser(HTMLParser):
 class LinkReport:
     """Links found across a batch of parsed HTML files.
 
+    The link sets are the parser's own (not copies): sort them where an order is needed.
+
     Attributes:
-        html_links (list[str]): Sorted, de-duplicated local HTML links.
-        other_links (list[str]): Sorted, de-duplicated local non-HTML resource links.
-        unspecified_links (list[str]): Sorted, de-duplicated links that could not be classified
-            (external URLs, links leaving the site folder, unrecognized extensions).
+        html_links (set[str]): Local HTML links.
+        other_links (set[str]): Local non-HTML resource links.
+        unspecified_links (set[str]): Links that could not be classified (external URLs, links
+            leaving the site folder, unrecognized extensions).
         corrupted_files (list[str]): Sorted paths of HTML files that couldn't be read.
     """
 
-    html_links: list[str]
-    other_links: list[str]
-    unspecified_links: list[str]
+    html_links: set[str]
+    other_links: set[str]
+    unspecified_links: set[str]
     corrupted_files: list[str]
 
 
@@ -270,13 +277,13 @@ def find_all_links(parser: WBMHTMLParser, files_path: list[pathlib.Path]) -> Lin
         files_path (list[pathlib.Path]): Paths to the HTML files to parse.
 
     Returns:
-        LinkReport: The sorted, de-duplicated links found, plus any files that failed to parse.
+        LinkReport: The links found, plus any files that failed to parse.
     """
     corrupted_files = [str(file) for file in files_path if not _parse_file(parser, file)]
     report = LinkReport(
-        html_links=sorted(parser.html_links),
-        other_links=sorted(parser.other_links),
-        unspecified_links=sorted(parser.unspecified_links),
+        html_links=parser.html_links,
+        other_links=parser.other_links,
+        unspecified_links=parser.unspecified_links,
         corrupted_files=sorted(corrupted_files),
     )
 
