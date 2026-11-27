@@ -11,19 +11,33 @@ snapshot it came from. A file is (re)written only when:
 
 So re-running a merge is safe: files fetched later by ``wmdc-download``, and manual edits,
 are never overwritten.
+
+When the newest snapshot has a file where an older one has a folder (or the reverse), the
+newest wins and the older path is skipped with a warning. Symlinks inside snapshots are
+skipped, never followed, and so is a manifest at a snapshot's root. On a case-insensitive
+output filesystem, names differing only by case are one file (in the plan and in the
+manifest, which still records each file under its own spelling).
 """
 
 import dataclasses
-import json
+import itertools
 import logging
-import pathlib
 import re
 import shutil
-import tempfile
+import stat
 from typing import TYPE_CHECKING
+
+from wayback_machine_downloader_companion._filesystem import (
+    fold_key,
+    is_case_insensitive,
+    replace_atomically,
+)
+from wayback_machine_downloader_companion._manifest import Manifest, load_manifest, save_manifest
 
 if TYPE_CHECKING:
     import argparse
+    import pathlib
+    from collections.abc import Iterator
 
     from wayback_machine_downloader_companion.config import AppConfig
 
@@ -77,18 +91,135 @@ class MergePlan:
     entries: list[MergeEntry] = dataclasses.field(default_factory=list)
 
 
-def is_case_insensitive(folder: "pathlib.Path") -> bool:
-    """Tells whether a folder's filesystem ignores case (macOS and Windows defaults).
+@dataclasses.dataclass(slots=True)
+class _Claims:
+    """Output paths already taken by newer snapshots, as files and as the folders above them.
+
+    A path can't be both a file and a folder, so ``files`` and ``folders`` never overlap, and
+    ``folders`` holds every ancestor of every file: an ancestor walk stops at the first known
+    folder.
+
+    Attributes:
+        files (dict[str, str]): Keys of the files in the plan -> their relative path.
+        folders (set[str]): Keys of the folders holding them.
+    """
+
+    files: dict[str, str] = dataclasses.field(default_factory=dict)
+    folders: set[str] = dataclasses.field(default_factory=set)
+
+    def conflict(self, key: str) -> str | None:
+        """Finds a newer path that makes ``key`` impossible to write.
+
+        Args:
+            key (str): The candidate file's key (POSIX relative path, maybe case-folded).
+
+        Returns:
+            str | None: ``key`` itself if it is already a folder, the ancestor of ``key``
+            that is already a file, or ``None`` if ``key`` can be a file.
+        """
+        if key in self.folders:
+            return key
+        parent = key.rpartition("/")[0]
+        while parent and parent not in self.folders:
+            if parent in self.files:
+                return parent
+            parent = parent.rpartition("/")[0]
+        return None
+
+    def add(self, key: str, relative: str) -> None:
+        """Takes ``key`` as a file, and its ancestors as folders.
+
+        Args:
+            key (str): A key :meth:`conflict` accepted.
+            relative (str): The file's relative path, as spelled in its snapshot.
+        """
+        self.files[key] = relative
+        parent = key.rpartition("/")[0]
+        while parent and parent not in self.folders:
+            self.folders.add(parent)
+            parent = parent.rpartition("/")[0]
+
+
+def _is_older_version(claims: _Claims, key: str, relative: str, path: "pathlib.Path") -> bool:
+    """Tells whether a newer snapshot already has this file, and says so if it is respelled.
 
     Args:
-        folder (pathlib.Path): An existing folder on the filesystem to probe.
+        claims (_Claims): Output paths taken by newer snapshots.
+        key (str): The candidate's key.
+        relative (str): The candidate's relative path.
+        path (pathlib.Path): The candidate file, for the log.
 
     Returns:
-        bool: ``True`` if ``A.html`` and ``a.html`` would be the same file there.
+        bool: ``True`` if the newer file takes the candidate's place.
     """
-    with tempfile.NamedTemporaryFile(prefix="wmdc-Case-", dir=folder) as probe:
-        probe_path = pathlib.Path(probe.name)
-        return probe_path.with_name(probe_path.name.lower()).exists()
+    claimed = claims.files.get(key)
+    if claimed is None:
+        return False
+    if claimed != relative:  # only case folding makes two spellings one file
+        logger.warning(
+            "Skipping %s: a newer snapshot has %s, the same file on a case-insensitive output",
+            path,
+            claimed,
+        )
+    return True
+
+
+def _add_snapshot(
+    plan: MergePlan, folder: "pathlib.Path", claims: _Claims, fold_case: bool
+) -> None:
+    """Adds a snapshot's files to the plan, unless a newer snapshot already decided them.
+
+    Args:
+        plan (MergePlan): The plan being built (newest snapshots first).
+        folder (pathlib.Path): The snapshot folder.
+        claims (_Claims): Output paths taken by newer snapshots; updated.
+        fold_case (bool): Treat names differing only by case as one file.
+    """
+    skip = len(folder.parts)
+    # A snapshot's own manifest at its root would overwrite the output's: it isn't a site file.
+    manifest_key = fold_key(MANIFEST_FILE, fold_case)
+    for path in folder.rglob("*"):
+        mode = path.lstat().st_mode  # one call tells a symlink, a file and a folder apart
+        if stat.S_ISLNK(mode):
+            logger.warning("Skipping symlink %s (symlinks are not followed)", path)
+            continue
+        if not stat.S_ISREG(mode):
+            continue
+        # rglob yields paths under `folder`: slicing its parts is exact, and much cheaper
+        # than `relative_to` (measured: most of the merge time).
+        relative = "/".join(path.parts[skip:])
+        key = fold_key(relative, fold_case)
+        if key == manifest_key:
+            logger.info("Skipping %s: a merge manifest, not a site file", path)
+            continue
+        if _is_older_version(claims, key, relative, path):
+            continue
+        conflict = claims.conflict(key)
+        if conflict is not None:
+            logger.warning(
+                "Skipping %s: a newer snapshot has %s as a %s",
+                path,
+                conflict,
+                "folder" if conflict == key else "file",
+            )
+            continue
+        claims.add(key, relative)
+        plan.entries.append(MergeEntry(path, relative, folder.name))
+
+
+def _snapshot_versions(config: "AppConfig") -> list["pathlib.Path"]:
+    """Lists the snapshot folders, newest first.
+
+    Args:
+        config (AppConfig): The active configuration.
+
+    Returns:
+        list[pathlib.Path]: The snapshot folders (see :func:`is_snapshot_folder`).
+    """
+    snapshots = config.folder_snapshots
+    if not snapshots.is_dir():
+        return []
+    return sorted((f for f in snapshots.glob("*") if is_snapshot_folder(f)), reverse=True)
 
 
 def build_merge_plan(config: "AppConfig", fold_case: bool = False) -> MergePlan:
@@ -102,49 +233,19 @@ def build_merge_plan(config: "AppConfig", fold_case: bool = False) -> MergePlan:
     Returns:
         MergePlan: The files to merge. Empty if there is nothing to merge.
     """
-    snapshots = config.folder_snapshots
-    versions = sorted(
-        (f for f in snapshots.glob("*") if is_snapshot_folder(f)) if snapshots.is_dir() else (),
-        reverse=True,
-    )
+    versions = _snapshot_versions(config)
     if not versions:
-        logger.info("Nothing to merge in %s", snapshots)
+        logger.info("Nothing to merge in %s", config.folder_snapshots)
         return MergePlan()
 
     logger.info("Found %d folder(s) to be merged", len(versions))
     plan = MergePlan()
-    seen: set[str] = set()
-    for folder in versions:  # newest first: the first version seen of a file wins
-        for file in folder.rglob("*"):
-            if not file.is_file():
-                continue
-            relative = file.relative_to(folder).as_posix()
-            key = relative.casefold() if fold_case else relative
-            if key not in seen:
-                seen.add(key)
-                plan.entries.append(MergeEntry(file, relative, folder.name))
+    claims = _Claims()
+    for folder in versions:  # newest first: the first version seen of a path wins
+        _add_snapshot(plan, folder, claims, fold_case)
 
     logger.info("Found %d file(s) for %s", len(plan.entries), config.web_folder)
     return plan
-
-
-def _load_manifest(path: "pathlib.Path") -> dict[str, dict[str, object]]:
-    """Reads the merge manifest.
-
-    Args:
-        path (pathlib.Path): The manifest file.
-
-    Returns:
-        dict: Relative path -> what the last merge wrote there; empty if absent or unreadable.
-    """
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:  # unreadable, or not JSON
-        logger.warning("Ignoring unreadable merge manifest %s -- %s", path, error)
-        return {}
-    return data if isinstance(data, dict) else {}
 
 
 def _untouched_since_merge(destination: "pathlib.Path", record: "dict[str, object]") -> bool:
@@ -157,8 +258,11 @@ def _untouched_since_merge(destination: "pathlib.Path", record: "dict[str, objec
     Returns:
         bool: ``True`` if its size and modification time match the record.
     """
-    stat = destination.stat()
-    return record.get("size") == stat.st_size and record.get("mtime_ns") == stat.st_mtime_ns
+    stat_result = destination.stat()
+    return (
+        record.get("size") == stat_result.st_size
+        and record.get("mtime_ns") == stat_result.st_mtime_ns
+    )
 
 
 def _should_copy(
@@ -182,20 +286,94 @@ def _should_copy(
     return newer and _untouched_since_merge(destination, record)
 
 
-def _copy_atomically(source: "pathlib.Path", destination: "pathlib.Path") -> None:
-    """Copies a file through a temporary name, so the destination is never half-written.
+def _ensure_folder(folder: "pathlib.Path", known: "set[pathlib.Path]") -> bool:
+    """Creates an output folder, unless a file is in the way.
 
     Args:
-        source (pathlib.Path): File to copy.
-        destination (pathlib.Path): Target path; its folder is created if needed.
+        folder (pathlib.Path): The folder, inside the output folder.
+        known (set[pathlib.Path]): Folders known to exist, the output folder included (so
+            the ancestor walk stops there); updated. It saves a ``mkdir`` per copied file.
+
+    Returns:
+        bool: ``True`` if ``folder`` now exists, ``False`` if a non-folder is in the way.
     """
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(f".{destination.name}.wmdc-tmp")
+    missing: list[pathlib.Path] = []
+    current = folder
+    while current not in known and not current.is_dir():
+        if current.exists():  # a file where a folder should be
+            return False
+        missing.append(current)
+        current = current.parent
+    for created in reversed(missing):
+        created.mkdir(exist_ok=True)
+    known.update(missing)
+    known.add(current)
+    return True
+
+
+def _merge_entry(
+    entry: MergeEntry, output: "pathlib.Path", manifest: Manifest, known: "set[pathlib.Path]"
+) -> bool:
+    """Copies one entry into the output folder if it should be, and records it.
+
+    Args:
+        entry (MergeEntry): The candidate.
+        output (pathlib.Path): The output folder.
+        manifest (Manifest): What the merges wrote; updated.
+        known (set[pathlib.Path]): Output folders known to exist; updated.
+
+    Returns:
+        bool: ``True`` if the file was written.
+    """
+    destination = output / entry.relative
+    if not _should_copy(entry, destination, manifest.get(entry.relative)):
+        return False
+    if not _ensure_folder(destination.parent, known):
+        logger.warning(
+            "Skipping %s: a file in the output is in the way of its folder", entry.source
+        )
+        return False
+    logger.debug("Copying %s -> %s", entry.source, destination)
+    replace_atomically(destination, lambda temporary: shutil.copy2(entry.source, temporary))
+    stat_result = destination.stat()
+    manifest.put(
+        entry.relative,
+        {
+            "snapshot": entry.snapshot,
+            "size": stat_result.st_size,
+            "mtime_ns": stat_result.st_mtime_ns,
+        },
+    )
+    return True
+
+
+def _merge_entries(plan: MergePlan, output: "pathlib.Path", fold_case: bool) -> int:
+    """Copies the plan into the output folder, keeping the manifest up to date.
+
+    The manifest is saved even when a copy fails midway (the error then propagates), so the
+    next merge still recognises the files this one wrote. It is left alone when nothing was
+    written.
+
+    Args:
+        plan (MergePlan): The files to merge.
+        output (pathlib.Path): The output folder (it exists).
+        fold_case (bool): Look manifest records up whatever their case, as the plan was folded.
+
+    Returns:
+        int: How many files were written.
+    """
+    manifest_path = output / MANIFEST_FILE
+    manifest = Manifest(load_manifest(manifest_path), fold_case)
+    known = {output}
+    written = 0
     try:
-        _ = shutil.copy2(source, temporary)
-        _ = temporary.replace(destination)
+        for entry in plan.entries:
+            if _merge_entry(entry, output, manifest, known):
+                written += 1
     finally:
-        temporary.unlink(missing_ok=True)  # left only if the copy failed
+        if written:
+            save_manifest(manifest_path, manifest)
+    return written
 
 
 def _check_folders(config: "AppConfig") -> str | None:
@@ -213,6 +391,22 @@ def _check_folders(config: "AppConfig") -> str | None:
     if output.is_relative_to(snapshots) or snapshots.is_relative_to(output):
         return "WEB_OUTPUT and WEB_FOLDER are nested in each other"
     return None
+
+
+def _probe_entries(config: "AppConfig") -> "Iterator[pathlib.Path]":
+    """Lists, lazily, the entries that tell whether the output folder ignores case.
+
+    The output's own entries come first (after a first merge, at least its manifest); an
+    empty output falls back on the snapshots' entries, usually on the same filesystem.
+
+    Args:
+        config (AppConfig): The active configuration (its output folder exists).
+
+    Returns:
+        Iterator[pathlib.Path]: The candidate entries, read only as far as the probe needs.
+    """
+    snapshots = (folder.iterdir() for folder in _snapshot_versions(config))
+    return itertools.chain(config.folder_output.iterdir(), itertools.chain.from_iterable(snapshots))
 
 
 def run(config: "AppConfig", args: "argparse.Namespace") -> int:
@@ -234,28 +428,12 @@ def run(config: "AppConfig", args: "argparse.Namespace") -> int:
 
     output = config.folder_output
     output.mkdir(parents=True, exist_ok=True)
-    plan = build_merge_plan(config, fold_case=is_case_insensitive(output))
+    fold_case = is_case_insensitive(_probe_entries(config))
+    plan = build_merge_plan(config, fold_case=fold_case)
     if not plan.entries:
         logger.info("Done -- nothing to merge")
         return 0
 
-    manifest_path = output / MANIFEST_FILE
-    manifest = _load_manifest(manifest_path)
-    written = 0
-    for entry in plan.entries:
-        destination = output / entry.relative
-        if not _should_copy(entry, destination, manifest.get(entry.relative)):
-            continue
-        logger.debug("Copying %s -> %s", entry.source, destination)
-        _copy_atomically(entry.source, destination)
-        stat = destination.stat()
-        manifest[entry.relative] = {
-            "snapshot": entry.snapshot,
-            "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
-        }
-        written += 1
-
-    _ = manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
+    written = _merge_entries(plan, output, fold_case)
     logger.info("Done -- %d file(s) written, %d kept as is", written, len(plan.entries) - written)
     return 0
